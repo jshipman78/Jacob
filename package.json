@@ -7,7 +7,8 @@
     "dev": "remotion studio",
     "tts": "node scripts/tts.mjs",
     "images": "node scripts/gen-images.mjs",
-    "render": "remotion render TroyVideo out/troy-video.mp4"
+    "render": "remotion render TroyVideo out/troy-video.mp4",
+    "make-video": "node pipeline/cli.mjs"
   },
   "dependencies": {
     "@fontsource/cinzel": "^5.3.0",
