@@ -6,3 +6,4 @@ public/audio/
 .env
 .env.local
 out/check/
+src/scenes/__preview*/
