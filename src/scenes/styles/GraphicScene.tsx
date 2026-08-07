@@ -175,12 +175,14 @@ export const GraphicScene: React.FC<SceneProps> = ({
               fill={RED}
             />
           </svg>
+          {/* Set on the ink bar rather than above it — at the top of the frame
+              the headline ran straight through the trench's lip marker. */}
           <Headline
-            top={116}
+            top={392}
             lines={['16 METRES', 'STRAIGHT DOWN']}
             t={ramp(p, 0.2, 0.42)}
-            size={104}
-            colors={[INK, RED]}
+            size={98}
+            colors={[PAPER, RED]}
           />
           <div
             style={{
