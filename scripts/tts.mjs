@@ -28,6 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { SECTIONS, PAUSE, IMAGES } from './script-data.mjs';
+import { resolveVoice, DEFAULT_VOICE_NAME } from './voices.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -44,22 +45,18 @@ const FPS = 30;
 const LEAD_IN_SEC = 0.5;
 const TRAILING_SEC = 1.5;
 
-// am_michael: American English, male, deep/measured delivery. In a head-to-
-// head audition against am_fenrir, bm_george, and am_puck on an actual
-// sentence from this script ("His name was Heinrich Schliemann...") am_puck
-// and am_fenrir read faster and louder (am_fenrir's waveform peak exceeded
-// 1.0 — i.e. it clips — on that very sample), which reads as excitable
-// rather than authoritative. bm_george was quieter but flatter/faster.
-// am_michael was both the slowest-paced (12.74s vs ~11.7-12.5s for the
-// others on identical text, i.e. more deliberate) and had the lowest peak
-// amplitude with no clipping — the combination that best fits a serious
-// documentary narrator reading measured historical prose. It's also the
-// American-English voice, matching the American-style number expansions
-// already baked into the script's `tts` overrides (e.g. "eighteen
-// seventy-three" rather than the British "eighteen seventy three" cadence).
-const VOICE = 'am_michael';
-const SPEED = 1.0;
-const LANG = 'en-us';
+// The channel's narrator is referred to by name — see scripts/voices.mjs for
+// the named voice registry and the rationale behind the current choice.
+// Override with `--voice=<Name>` or the VOICE env var.
+const voiceArg = process.argv
+  .find((a) => a.startsWith('--voice='))
+  ?.slice('--voice='.length);
+const SELECTED_VOICE = resolveVoice(voiceArg || process.env.VOICE || DEFAULT_VOICE_NAME);
+
+const VOICE_NAME = SELECTED_VOICE.name;
+const VOICE = SELECTED_VOICE.model;
+const SPEED = SELECTED_VOICE.speed;
+const LANG = SELECTED_VOICE.lang;
 
 // ---------------------------------------------------------------------------
 // 1. Flatten the script into a sentence list + paragraph list with timing
@@ -414,7 +411,8 @@ async function main() {
   const timing = {
     fps: FPS,
     sampleRate: SAMPLE_RATE,
-    voice: VOICE,
+    voice: VOICE_NAME,
+    voiceModel: VOICE,
     durationSec,
     sentences: sentencesOut,
     sections,
@@ -429,7 +427,7 @@ async function main() {
   verifyTiming(timing, sentences.length);
 
   console.log('\nDone.');
-  console.log(`Voice: ${VOICE}`);
+  console.log(`Voice: ${VOICE_NAME} (${VOICE})`);
   console.log(`Duration: ${formatMinSec(durationSec)} (${durationSec.toFixed(2)}s)`);
   console.log(`Sentences: ${sentencesOut.length}, Shots: ${shots.length}, Sections: ${sections.length}`);
 }

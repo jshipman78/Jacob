@@ -1,7 +1,8 @@
 {
   "fps": 30,
   "sampleRate": 24000,
-  "voice": "am_michael",
+  "voice": "Voice1",
+  "voiceModel": "am_michael",
   "durationSec": 831.8200000000006,
   "sentences": [
     {
