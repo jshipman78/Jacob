@@ -130,10 +130,19 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
       density: (u, v) => clamp01(0.5 - Math.abs(v - 0.5) * 0.7) * clamp01(0.4 + fbm(u * 5) * 0.8),
     });
 
-    return { medallions, baseline, pageTone, slots };
+    // Motes drifting across the page. Without these the plate is completely
+    // frozen once the four medallions have landed — a frame-to-frame diff four
+    // frames apart came back at 0.1/255 mean, i.e. visually static, and this
+    // scene carries nearly two and a half minutes of the film.
+    const motes = stipple(seed, 'relaymotes', {
+      x: -60, y: 90, w: W + 120, h: 760, count: 240, minR: 0.5, maxR: 2.4,
+    });
+
+    return { medallions, baseline, pageTone, slots, motes };
   }, [seed]);
 
   const p = clamp01(progress);
+  const t = frame / fps;
 
   const tPage = ramp(p, 0.0, 0.2);
   const tBase = ramp(p, 0.06, 0.44);
@@ -148,15 +157,20 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
   // highlighted man and holds there. Two moves, two holds — not a drift.
   const slide = easeInOutCubic(ramp(p, 0.60, 0.82));
   const targetX = hotIndex >= 0 ? geo.slots[hotIndex] : W / 2;
-  const camScale = 1.0 + slide * (hotIndex >= 0 ? 0.30 : 0.06);
-  const camX = (W / 2 - targetX) * (camScale - 1) / camScale;
-  const camY = slide * (hotIndex >= 0 ? 26 : 0);
+  // A continuous slow breath under the staged move, so the plate is never
+  // completely still even during the long holds.
+  const breath = rakingLight(frame, fps, 44, seed);
+  const drift = easeInOutCubic(ramp(p, 0.0, 1.0));
+  const camScale = 1.0 + slide * (hotIndex >= 0 ? 0.30 : 0.06) + drift * 0.035;
+  const camX =
+    (W / 2 - targetX) * (camScale - 1) / camScale + (breath - 0.5) * 26 - drift * 12;
+  const camY = slide * (hotIndex >= 0 ? 26 : 0) + (rakingLight(frame, fps, 57, seed * 0.5) - 0.5) * 14;
 
-  const sweep = rakingLight(frame, fps, 31, seed);
+  const sweep = rakingLight(frame, fps, 17, seed);
   const litness = (u: number) => 1 + 0.5 * Math.exp(-Math.pow((u - lerp(-0.2, 1.2, sweep)) / 0.24, 2));
 
   return (
-    <Plate seed={seed} frame={frame} fps={fps} tone="warm" lightPeriodSec={31} lightStrength={0.85}>
+    <Plate seed={seed} frame={frame} fps={fps} tone="warm" lightPeriodSec={17} lightStrength={0.85}>
       <AbsoluteFill
         style={{
           transform: `scale(${camScale.toFixed(4)}) translate(${camX.toFixed(2)}px, ${camY.toFixed(2)}px)`,
@@ -165,6 +179,23 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
       >
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
           <HatchField strokes={geo.pageTone} t={tPage} color={PLATE.cut} alpha={0.18} passes={4} />
+          {geo.motes.map((m, i) => {
+            const speed = 0.012 + (m.k % 0.29) * 0.04;
+            const u = ((t * speed) + m.k * 6.1) % 1;
+            const fade = Math.sin(u * Math.PI);
+            const o = m.o * fade * 0.34 * tPage;
+            if (o <= 0.01) return null;
+            return (
+              <circle
+                key={i}
+                cx={m.x + (u - 0.5) * 190 * (0.4 + (m.k % 0.6))}
+                cy={m.y - u * 130}
+                r={m.r}
+                fill={PLATE.cut}
+                opacity={o}
+              />
+            );
+          })}
           <InkPath d={geo.baseline.d} len={geo.baseline.len} t={tBase} color={PLATE.cutDim} width={1.2} opacity={0.5} />
 
           {geo.medallions.map((m) => {

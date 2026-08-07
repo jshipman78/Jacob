@@ -93,28 +93,33 @@ export const ClaimLedger: React.FC<SceneProps> = ({ progress, frame, fps, seed, 
   // claim is struck through. Three beats per row, staggered down the page.
   const rowT = (i: number) => stagger(ramp(p, 0.20, 0.94), i, rows.length, 0.135, 0.30);
 
-  const sweep = rakingLight(frame, fps, 33, seed);
+  const sweep = rakingLight(frame, fps, 19, seed);
 
   // Camera: the sheet is examined. A small push, a hold, then a drift down
   // the page as the later rows fill in.
   const push = easeOutCubic(ramp(p, 0.04, 0.26));
   const drift = easeInOutCubic(ramp(p, 0.45, 1.0));
-  const camScale = 1.0 + push * 0.045 + drift * 0.035;
-  const camY = -drift * 30;
+  // Plus a continuous slow wander, so the sheet is never dead between the
+  // staged moves — the ledger holds for 45 seconds at a stretch.
+  const wander = rakingLight(frame, fps, 37, seed);
+  const wander2 = rakingLight(frame, fps, 53, seed * 0.6);
+  const camScale = 1.0 + push * 0.045 + drift * 0.035 + (wander - 0.5) * 0.012;
+  const camY = -drift * 30 + (wander2 - 0.5) * 11;
+  const camX = (wander - 0.5) * 15;
 
   const colL = 46;
   const colR = SHEET.w * 0.5 + 34;
   const colW = SHEET.w * 0.5 - 92;
 
   return (
-    <Plate seed={seed} frame={frame} fps={fps} tone="neutral" lightPeriodSec={33} lightStrength={0.7}>
+    <Plate seed={seed} frame={frame} fps={fps} tone="neutral" lightPeriodSec={19} lightStrength={0.7}>
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
         <HatchField strokes={geo.ground} t={tGround} color={PLATE.cut} alpha={0.2} passes={5} />
       </svg>
 
       <AbsoluteFill
         style={{
-          transform: `scale(${camScale.toFixed(4)}) translateY(${camY.toFixed(2)}px)`,
+          transform: `scale(${camScale.toFixed(4)}) translate(${camX.toFixed(2)}px, ${camY.toFixed(2)}px)`,
           transformOrigin: '50% 40%',
         }}
       >

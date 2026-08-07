@@ -95,6 +95,7 @@ export const StatementCard: React.FC<SceneProps> = ({
   }, [seed]);
 
   const p = clamp01(progress);
+  const t = frame / fps;
 
   const isVerdict = variant === 'verdict';
   const isQuestion = variant === 'question';
@@ -120,13 +121,15 @@ export const StatementCard: React.FC<SceneProps> = ({
 
   // The ground breathes for the question variant — a slow, quantised swell
   // that keeps the plate alive under a long held title.
-  const breathe = isQuestion ? 1 + 0.16 * Math.sin(onNs(frame, 5) * 0.038) : 1;
+  const breathe = 1 + (isQuestion ? 0.16 : 0.09) * Math.sin(onNs(frame, 5) * 0.038);
 
   // Camera: a very slow push, holding still for most of the shot. On a
   // typographic beat, restraint is the craft.
   const push = easeInOutCubic(ramp(p, 0.05, 1.0));
+  const wander = rakingLight(frame, fps, 39, seed);
   const camScale = 1 + push * (isVerdict ? 0.055 : 0.032);
-  const camY = -push * (isVerdict ? 10 : 6);
+  const camY = -push * (isVerdict ? 10 : 6) + (wander - 0.5) * 9;
+  const camXd = (rakingLight(frame, fps, 51, seed * 0.7) - 0.5) * 12;
 
   const sweep = rakingLight(frame, fps, isVerdict ? 21 : 34, seed);
   const litness = (u: number) => 1 + 0.55 * Math.exp(-Math.pow((u - lerp(-0.2, 1.2, sweep)) / 0.25, 2));
@@ -144,7 +147,7 @@ export const StatementCard: React.FC<SceneProps> = ({
     >
       <AbsoluteFill
         style={{
-          transform: `scale(${camScale.toFixed(4)}) translateY(${camY.toFixed(2)}px)`,
+          transform: `scale(${camScale.toFixed(4)}) translate(${camXd.toFixed(2)}px, ${camY.toFixed(2)}px)`,
           transformOrigin: '50% 40%',
         }}
       >
@@ -164,7 +167,26 @@ export const StatementCard: React.FC<SceneProps> = ({
             alpha={0.26 * breathe}
             passes={4}
           />
-          <StippleField dots={geo.motes} t={tGround} color={PLATE.cut} alpha={0.28} />
+          {/* Motes adrift in front of the plate. A typographic beat should be
+              still, not frozen — these keep it breathing through a 28-second
+              hold without competing with the words. */}
+          {geo.motes.map((m, i) => {
+            const speed = 0.014 + (m.k % 0.31) * 0.045;
+            const u = ((t * speed) + m.k * 4.7) % 1;
+            const fade = Math.sin(u * Math.PI);
+            const o = m.o * fade * 0.4 * tGround;
+            if (o <= 0.01) return null;
+            return (
+              <circle
+                key={i}
+                cx={m.x + (u - 0.5) * 130 * (0.4 + (m.k % 0.6))}
+                cy={m.y - u * 160}
+                r={m.r}
+                fill={PLATE.cut}
+                opacity={o}
+              />
+            );
+          })}
 
           {/* Struck border, verdict only. */}
           {isVerdict ? (

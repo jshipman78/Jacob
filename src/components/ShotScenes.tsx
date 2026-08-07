@@ -3,7 +3,8 @@ import { AbsoluteFill, Sequence, interpolate, useCurrentFrame, useVideoConfig } 
 import type { ShotTiming } from '../types';
 import { SHOT_CROSSFADE_SEC } from '../constants';
 import { hashStringToUnitFloat } from '../lib/hash';
-import { sceneForShot } from '../scenes/registry';
+import type { StyleId } from '../scenes/styles/registry';
+import { sceneForShotInStyle } from '../scenes/styles/registry';
 
 type ShotLayerProps = {
   shot: ShotTiming;
@@ -16,6 +17,9 @@ type ShotLayerProps = {
   localStartFrame: number;
   shotDurationFrames: number;
   crossfadeFrames: number;
+  /** Alternate visual direction, for the comparison reels. Omitted (or
+   *  'handdrawn') on the real film. */
+  style?: StyleId;
 };
 
 /**
@@ -33,6 +37,7 @@ const ShotLayer: React.FC<ShotLayerProps> = ({
   localStartFrame,
   shotDurationFrames,
   crossfadeFrames,
+  style,
 }) => {
   const sequenceLocalFrame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -43,7 +48,7 @@ const ShotLayer: React.FC<ShotLayerProps> = ({
     extrapolateRight: 'clamp',
   });
 
-  const { Component, options } = sceneForShot(shot.imageId);
+  const { Component, options } = sceneForShotInStyle(shot.imageId, style);
 
   // Scenes animate themselves against their own progress, so a shot that runs
   // 5s and one that runs 55s each reveal fully over their own duration.
@@ -70,12 +75,14 @@ type ShotScenesProps = {
   shots: ShotTiming[];
   fps: number;
   totalDurationInFrames: number;
+  style?: StyleId;
 };
 
 export const ShotScenes: React.FC<ShotScenesProps> = ({
   shots,
   fps,
   totalDurationInFrames,
+  style,
 }) => {
   const crossfadeFrames = Math.round(SHOT_CROSSFADE_SEC * fps);
 
@@ -102,11 +109,12 @@ export const ShotScenes: React.FC<ShotScenesProps> = ({
             localStartFrame={startFrame - seqFrom}
             shotDurationFrames={endFrame - startFrame}
             crossfadeFrames={crossfadeFrames}
+            style={style}
           />
         </Sequence>
       );
     });
-  }, [shots, fps, crossfadeFrames, totalDurationInFrames]);
+  }, [shots, fps, crossfadeFrames, totalDurationInFrames, style]);
 
   return <AbsoluteFill style={{ backgroundColor: '#000' }}>{layers}</AbsoluteFill>;
 };

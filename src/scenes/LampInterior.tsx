@@ -37,7 +37,7 @@ const W = 1920;
 const H = 1080;
 
 /** The flame — the single source everything in the plate is lit by. */
-const LAMP = { x: 1310, y: 392 };
+const LAMP = { x: 1268, y: 372 };
 const TABLE_Y = 640;
 
 type Subject = 'book' | 'bundle' | 'crates';
@@ -56,8 +56,11 @@ export const LampInterior: React.FC<SceneProps> = ({
 
     /** Falloff from the flame, 0 (dark) → 1 (lit), in plate coordinates. */
     const litAt = (px: number, py: number) => {
-      const d = Math.hypot((px - LAMP.x) / 620, (py - LAMP.y) / 460);
-      return clamp01(1.15 - Math.pow(d, 1.35));
+      // Wide enough that the subject on the table is genuinely lit. A
+      // physically tight falloff looked right in the abstract and left the
+      // book — the whole point of the shot — invisible.
+      const d = Math.hypot((px - LAMP.x) / 880, (py - LAMP.y) / 640);
+      return clamp01(1.2 - Math.pow(d, 1.3));
     };
 
     // --- the room behind: hatched only where the light reaches ------------
@@ -103,26 +106,30 @@ export const LampInterior: React.FC<SceneProps> = ({
 
     // --- the subject on the table ------------------------------------------
     // Book: two leaves opened toward the light, text as ruled lines.
+    const BX = 700;   // centre of the open book
+    const BW = 420;   // half-width
     const bookL = contour(seed, 'bookl', [
-      { x: 350, y: TABLE_Y - 8 }, { x: 400, y: TABLE_Y - 58 },
-      { x: 560, y: TABLE_Y - 78 }, { x: 690, y: TABLE_Y - 62 },
-    ], 1.3, 90);
+      { x: BX - BW, y: TABLE_Y - 4 }, { x: BX - BW + 62, y: TABLE_Y - 86 },
+      { x: BX - 170, y: TABLE_Y - 112 }, { x: BX, y: TABLE_Y - 92 },
+    ], 1.4, 90);
     const bookR = contour(seed, 'bookr', [
-      { x: 690, y: TABLE_Y - 62 }, { x: 820, y: TABLE_Y - 78 },
-      { x: 962, y: TABLE_Y - 56 }, { x: 1006, y: TABLE_Y - 6 },
-    ], 1.3, 90);
+      { x: BX, y: TABLE_Y - 92 }, { x: BX + 170, y: TABLE_Y - 112 },
+      { x: BX + BW - 62, y: TABLE_Y - 82 }, { x: BX + BW, y: TABLE_Y - 2 },
+    ], 1.4, 90);
     const bookBase = contour(seed, 'bookbase', [
-      { x: 350, y: TABLE_Y - 8 }, { x: 520, y: TABLE_Y + 8 },
-      { x: 690, y: TABLE_Y + 12 }, { x: 860, y: TABLE_Y + 8 }, { x: 1006, y: TABLE_Y - 6 },
-    ], 1.1, 120);
+      { x: BX - BW, y: TABLE_Y - 4 }, { x: BX - 200, y: TABLE_Y + 18 },
+      { x: BX, y: TABLE_Y + 24 }, { x: BX + 200, y: TABLE_Y + 18 }, { x: BX + BW, y: TABLE_Y - 2 },
+    ], 1.2, 120);
+    const spine = contour(seed, 'spine',
+      segment({ x: BX, y: TABLE_Y - 92 }, { x: BX, y: TABLE_Y + 24 }, 8), 1.0, 60);
     const textLines: { d: string; len: number }[] = [];
-    for (let i = 0; i < 11; i++) {
-      const y = TABLE_Y - 62 + i * 5.4;
-      const inset = i * 1.8;
+    for (let i = 0; i < 14; i++) {
+      const y = TABLE_Y - 88 + i * 7.4;
+      const inset = i * 2.6;
       textLines.push(contour(seed, `tl${i}`,
-        segment({ x: 402 + inset, y: y - 6 - i * 0.4 }, { x: 668 - inset * 0.4, y: y - 4 }, 8), 0.7, 60));
+        segment({ x: BX - BW + 74 + inset, y: y - 4 - i * 0.5 }, { x: BX - 26, y: y }, 8), 0.7, 60));
       textLines.push(contour(seed, `tr${i}`,
-        segment({ x: 712 + inset * 0.4, y: y - 4 }, { x: 984 - inset, y: y - 6 - i * 0.4 }, 8), 0.7, 60));
+        segment({ x: BX + 26, y }, { x: BX + BW - 74 - inset, y: y - 4 - i * 0.5 }, 8), 0.7, 60));
     }
 
     // Bundle: cloth folded over something heavy, with contour hatching that
@@ -139,6 +146,23 @@ export const LampInterior: React.FC<SceneProps> = ({
       bundleTop.push({ x, y });
     }
     const bundleLine = contour(seed, 'bundle', bundleTop, 1.5, 110);
+    // Close the silhouette along the table, and tie the cloth — without these
+    // the bundle is an open curve and reads as another hill, which is exactly
+    // what it looked like on the first pass.
+    const bundleBase = contour(seed, 'bundlebase',
+      segment({ x: 400, y: TABLE_Y + 10 }, { x: 1020, y: TABLE_Y + 14 }, 14), 1.1, 140);
+    const bundleTies = [
+      contour(seed, 'tie1', [
+        { x: 560, y: TABLE_Y + 8 }, { x: 588, y: TABLE_Y - 60 },
+        { x: 640, y: TABLE_Y - 116 }, { x: 700, y: TABLE_Y - 146 },
+      ], 1.2, 90),
+      contour(seed, 'tie2', [
+        { x: 700, y: TABLE_Y - 146 }, { x: 772, y: TABLE_Y - 122 },
+        { x: 828, y: TABLE_Y - 66 }, { x: 856, y: TABLE_Y + 6 },
+      ], 1.2, 90),
+    ];
+    // The knot at the crown, where the corners are gathered.
+    const knot = wobblyEllipse(seed, 'knot', 700, TABLE_Y - 152, 30, 19, 1.0, 26);
     const bundleFolds = hatchContours(seed, 'folds', bundleTop, {
       lines: 20, spacing: 9, spacingGrowth: 1.06, dashLength: 28, dashGap: 14,
       amp: 1.2, width: 1.15, drift: 8,
@@ -163,7 +187,8 @@ export const LampInterior: React.FC<SceneProps> = ({
 
     return {
       wall, tableEdge, tableTop, grain, lampBody, lampBody2, lampFoot,
-      bookL, bookR, bookBase, textLines, bundleLine, bundleFolds, crates, smoke, litAt,
+      bookL, bookR, bookBase, spine, textLines,
+      bundleLine, bundleBase, bundleTies, knot, bundleFolds, crates, smoke, litAt,
     };
   }, [seed]);
 
@@ -235,13 +260,14 @@ export const LampInterior: React.FC<SceneProps> = ({
               <InkPath d={geo.bookBase.d} len={geo.bookBase.len} t={tSubject} color={PLATE.cut} width={1.8} opacity={0.85} />
               <InkPath d={geo.bookL.d} len={geo.bookL.len} t={tSubject} color={PLATE.cut} width={1.8} opacity={0.9} />
               <InkPath d={geo.bookR.d} len={geo.bookR.len} t={clamp01((tSubject - 0.12) / 0.88)} color={PLATE.cut} width={1.8} opacity={0.9} />
+              <InkPath d={geo.spine.d} len={geo.spine.len} t={clamp01((tSubject - 0.2) / 0.8)} color={PLATE.cut} width={1.4} opacity={0.6} />
               {geo.textLines.map((l, i) => (
                 <InkPath
                   key={i}
                   d={l.d} len={l.len}
                   t={stagger(clamp01((tSubject - 0.25) / 0.75), i, geo.textLines.length, 0.012, 0.2)}
                   color={PLATE.cut} width={0.7}
-                  opacity={0.42 * flame}
+                  opacity={0.6 * flame}
                 />
               ))}
             </g>
@@ -251,6 +277,16 @@ export const LampInterior: React.FC<SceneProps> = ({
             <g>
               <HatchField strokes={geo.bundleFolds} t={tSubject} color={PLATE.cut} alpha={0.7 * flame} passes={5} />
               <InkPath d={geo.bundleLine.d} len={geo.bundleLine.len} t={tSubject} color={PLATE.cut} width={2.0} opacity={0.9} />
+              <InkPath d={geo.bundleBase.d} len={geo.bundleBase.len} t={tSubject} color={PLATE.cut} width={1.5} opacity={0.6} />
+              {geo.bundleTies.map((tie, i) => (
+                <InkPath
+                  key={i}
+                  d={tie.d} len={tie.len}
+                  t={clamp01((tSubject - 0.2 - i * 0.1) / 0.7)}
+                  color={PLATE.cut} width={1.6} opacity={0.7}
+                />
+              ))}
+              <InkPath d={geo.knot.d} len={geo.knot.len} t={clamp01((tSubject - 0.4) / 0.6)} color={PLATE.cut} width={1.8} opacity={0.85} />
               {/* Gold showing through the cloth — the reason for the scene. */}
               {Array.from({ length: 9 }, (_, i) => {
                 const k = i / 9;
