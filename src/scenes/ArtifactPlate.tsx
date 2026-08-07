@@ -71,7 +71,7 @@ const ARTIFACT_BBOX: Record<ArtifactKind, BBox> = {
   diadem: { left: -250, right: 250, top: -26, bottom: 302 },
   cup: { left: -176, right: 176, top: -250, bottom: 224 },
   hoard: { left: -258, right: 258, top: -170, bottom: 130 },
-  sherd: { left: -182, right: 188, top: -202, bottom: 72 },
+  sherd: { left: -182, right: 188, top: -202, bottom: 106 },
 };
 
 // ---------------------------------------------------------------------------
