@@ -1,0 +1,987 @@
+{
+  "fps": 30,
+  "sampleRate": 24000,
+  "voice": "placeholder",
+  "durationSec": 849.9000000000008,
+  "sentences": [
+    {
+      "index": 0,
+      "sectionId": "hook",
+      "paragraphIndex": 0,
+      "imageId": "hook-trench",
+      "text": "In 1873, a man dug a massive trench straight through the middle of one of the most important archaeological sites on Earth, blew past nine separate layers of ancient history without properly recording most of them, smuggled a king’s ransom in gold out of the country in his wife’s shawl, and then lied about almost every part of the story.",
+      "start": 0,
+      "end": 24
+    },
+    {
+      "index": 1,
+      "sectionId": "hook",
+      "paragraphIndex": 0,
+      "imageId": "hook-credit",
+      "text": "And he’s still, to this day, credited as the man who proved Troy was real.",
+      "start": 25.1,
+      "end": 31.1
+    },
+    {
+      "index": 2,
+      "sectionId": "hook",
+      "paragraphIndex": 0,
+      "imageId": "hook-portrait",
+      "text": "His name was Heinrich Schliemann.",
+      "start": 32,
+      "end": 34
+    },
+    {
+      "index": 3,
+      "sectionId": "hook",
+      "paragraphIndex": 0,
+      "imageId": "hook-portrait",
+      "text": "He wasn’t an archaeologist.",
+      "start": 34.35,
+      "end": 35.95
+    },
+    {
+      "index": 4,
+      "sectionId": "hook",
+      "paragraphIndex": 0,
+      "imageId": "hook-portrait",
+      "text": "He wasn’t a historian.",
+      "start": 36.300000000000004,
+      "end": 37.900000000000006
+    },
+    {
+      "index": 5,
+      "sectionId": "hook",
+      "paragraphIndex": 0,
+      "imageId": "hook-portrait",
+      "text": "He was a retired businessman with a childhood obsession, a small fortune, and — as it turns out — a serious problem with the truth.",
+      "start": 38.25000000000001,
+      "end": 48.25000000000001
+    },
+    {
+      "index": 6,
+      "sectionId": "hook",
+      "paragraphIndex": 0,
+      "imageId": "hook-question",
+      "text": "So how does a man with no formal training end up finding one of the most famous lost cities in history?",
+      "start": 49.150000000000006,
+      "end": 57.550000000000004
+    },
+    {
+      "index": 7,
+      "sectionId": "hook",
+      "paragraphIndex": 0,
+      "imageId": "hook-question",
+      "text": "And how much of what we think we know about that discovery is actually something he made up?",
+      "start": 57.900000000000006,
+      "end": 65.10000000000001
+    },
+    {
+      "index": 8,
+      "sectionId": "hook",
+      "paragraphIndex": 0,
+      "imageId": "hook-title",
+      "text": "This is the true story of Heinrich Schliemann — and the myth he built around himself that’s almost as famous as the myth he was trying to prove.",
+      "start": 66.2,
+      "end": 77.4
+    },
+    {
+      "index": 9,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-book",
+      "text": "Schliemann always claimed his fascination with Troy started as a child, after his father gave him an illustrated book of ancient history.",
+      "start": 78.80000000000001,
+      "end": 87.60000000000001
+    },
+    {
+      "index": 10,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-book",
+      "text": "According to Schliemann’s own account, he looked at a picture of Troy in flames and declared, right then, that he would one day dig up the city and prove it was real.",
+      "start": 87.95,
+      "end": 100.75
+    },
+    {
+      "index": 11,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-book",
+      "text": "It’s a great story.",
+      "start": 101.65,
+      "end": 103.25
+    },
+    {
+      "index": 12,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-book",
+      "text": "Ambitious kid, impossible dream, decades of determination.",
+      "start": 103.6,
+      "end": 106.39999999999999
+    },
+    {
+      "index": 13,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-letters",
+      "text": "There’s just one issue historians keep running into with Heinrich Schliemann: he told a lot of great stories about himself.",
+      "start": 107.1,
+      "end": 115.1
+    },
+    {
+      "index": 14,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-letters",
+      "text": "And a disturbing number of them fall apart under scrutiny.",
+      "start": 115.44999999999999,
+      "end": 119.44999999999999
+    },
+    {
+      "index": 15,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-letters",
+      "text": "Letters, diaries, and business records that have since been cross-checked against his own later writings show that he rewrote his personal history more than once — sometimes small exaggerations, sometimes outright fabrications, including claims about meeting world leaders and witnessing historical events that other records simply don’t support.",
+      "start": 119.79999999999998,
+      "end": 138.99999999999997
+    },
+    {
+      "index": 16,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-letters",
+      "text": "So even the origin story — the entire reason we’re told he became obsessed with Troy in the first place — may itself be part myth.",
+      "start": 139.89999999999998,
+      "end": 150.29999999999998
+    },
+    {
+      "index": 17,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-merchant",
+      "text": "What we do know for certain is this: Schliemann built an enormous fortune through international trade in the mid-1800s, retired wealthy while still relatively young, and turned his full attention to a question that most serious scholars at the time considered closed.",
+      "start": 150.99999999999997,
+      "end": 167.79999999999998
+    },
+    {
+      "index": 18,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-merchant",
+      "text": "Troy, they believed, was a beautiful piece of literature — not a real place.",
+      "start": 168.14999999999998,
+      "end": 173.74999999999997
+    },
+    {
+      "index": 19,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-merchant",
+      "text": "Homer’s city was treated the same way we’d treat Middle-earth today: a setting, not a location.",
+      "start": 174.09999999999997,
+      "end": 180.49999999999997
+    },
+    {
+      "index": 20,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-homer",
+      "text": "Schliemann disagreed.",
+      "start": 181.19999999999996,
+      "end": 182.39999999999995
+    },
+    {
+      "index": 21,
+      "sectionId": "obsession",
+      "paragraphIndex": 1,
+      "imageId": "obsession-homer",
+      "text": "And he had the one thing most skeptics of the theory didn’t have: enough money to just go dig and find out for himself.",
+      "start": 182.74999999999994,
+      "end": 192.34999999999994
+    },
+    {
+      "index": 22,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-dardanelles",
+      "text": "In 1868, Schliemann traveled to northwestern Turkey, to a region near the coast of the Dardanelles, guided partly by the work of an earlier scholar and diplomat named Frank Calvert — a name that matters a lot more to this story than most retellings give him credit for.",
+      "start": 193.74999999999994,
+      "end": 212.94999999999993
+    },
+    {
+      "index": 23,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-calvert",
+      "text": "Calvert, a British-American who had actually lived in the region for years, had already identified a mound called Hisarlik as the most likely site of ancient Troy, and had even begun excavating part of it himself.",
+      "start": 213.84999999999994,
+      "end": 228.24999999999994
+    },
+    {
+      "index": 24,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-calvert",
+      "text": "But Calvert didn’t have Schliemann’s money.",
+      "start": 228.59999999999994,
+      "end": 230.99999999999994
+    },
+    {
+      "index": 25,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-calvert",
+      "text": "Schliemann did.",
+      "start": 231.34999999999994,
+      "end": 232.54999999999993
+    },
+    {
+      "index": 26,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-calvert",
+      "text": "And when the two men joined forces, it was Schliemann’s name, not Calvert’s, that history remembered.",
+      "start": 232.89999999999992,
+      "end": 239.29999999999993
+    },
+    {
+      "index": 27,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-partnership",
+      "text": "That alone tells you something about how this story tends to get told.",
+      "start": 239.99999999999991,
+      "end": 245.1999999999999
+    },
+    {
+      "index": 28,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-partnership",
+      "text": "Calvert had spent years building relationships with local authorities, studying the terrain, and forming the theory in the first place.",
+      "start": 245.5499999999999,
+      "end": 253.5499999999999
+    },
+    {
+      "index": 29,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-partnership",
+      "text": "Schliemann arrived, funded the excavation, and within a few short years, his name was the one printed in newspapers across Europe.",
+      "start": 253.8999999999999,
+      "end": 262.2999999999999
+    },
+    {
+      "index": 30,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-partnership",
+      "text": "Calvert’s contribution was, for a long time, reduced to a footnote — and only in recent decades have historians made a serious effort to restore him to his proper place in the story.",
+      "start": 262.6499999999999,
+      "end": 275.8499999999999
+    },
+    {
+      "index": 31,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-partnership",
+      "text": "It’s worth sitting with that for a second, because it’s going to become a pattern with Schliemann: someone else does the careful, foundational work, and Schliemann ends up with the credit, the fame, and the version of the story that gets remembered.",
+      "start": 276.7499999999999,
+      "end": 293.5499999999999
+    },
+    {
+      "index": 32,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-crews",
+      "text": "Starting in 1871, Schliemann began digging at Hisarlik at a scale nobody had attempted before.",
+      "start": 294.2499999999999,
+      "end": 300.2499999999999
+    },
+    {
+      "index": 33,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-crews",
+      "text": "And this is where his lack of formal training becomes a serious problem.",
+      "start": 300.5999999999999,
+      "end": 305.7999999999999
+    },
+    {
+      "index": 34,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-crews",
+      "text": "Modern archaeology is slow, careful, and methodical — every layer of soil documented before it’s removed, because each layer represents a different era, and once you dig through it, that information is gone forever.",
+      "start": 306.1499999999999,
+      "end": 319.74999999999994
+    },
+    {
+      "index": 35,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-crews",
+      "text": "Schliemann did not work that way.",
+      "start": 320.6499999999999,
+      "end": 323.0499999999999
+    },
+    {
+      "index": 36,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-trench",
+      "text": "He used massive digging crews and, in places, actual explosives to cut through the mound as fast as possible.",
+      "start": 323.7499999999999,
+      "end": 331.3499999999999
+    },
+    {
+      "index": 37,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-trench",
+      "text": "He carved an enormous trench straight down through the site — a trench so aggressive that later archaeologists nicknamed it “Schliemann’s Great Trench” — slicing through multiple layers of the ancient city with almost no record of what he was destroying along the way.",
+      "start": 331.69999999999993,
+      "end": 349.29999999999995
+    },
+    {
+      "index": 38,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-layers",
+      "text": "Hisarlik, as later excavation would reveal, isn’t one city.",
+      "start": 349.99999999999994,
+      "end": 353.59999999999997
+    },
+    {
+      "index": 39,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-layers",
+      "text": "It’s at least nine cities, stacked on top of each other across roughly four thousand years, labeled Troy I at the bottom up through Troy IX near the top.",
+      "start": 353.95,
+      "end": 365.55
+    },
+    {
+      "index": 40,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-layers",
+      "text": "Somewhere in that stack was almost certainly the city that inspired Homer’s Troy.",
+      "start": 365.90000000000003,
+      "end": 371.1
+    },
+    {
+      "index": 41,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-layers",
+      "text": "Schliemann didn’t carefully work down through those layers to find it.",
+      "start": 372.20000000000005,
+      "end": 376.6
+    },
+    {
+      "index": 42,
+      "sectionId": "dig",
+      "paragraphIndex": 2,
+      "imageId": "dig-layers",
+      "text": "He blasted through most of them looking for the biggest, most impressive find he could locate — and in 1873, he got one.",
+      "start": 376.95000000000005,
+      "end": 386.15000000000003
+    },
+    {
+      "index": 43,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-gold",
+      "text": "Deep in the layer we now call Troy II, Schliemann’s crew uncovered an extraordinary hoard: gold jewelry, diadems, cups, and thousands of smaller gold and silver objects, all clustered together as if someone had hidden them deliberately, in a hurry, a very long time ago.",
+      "start": 387.55,
+      "end": 405.55
+    },
+    {
+      "index": 44,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-shawl",
+      "text": "Schliemann named it immediately, and dramatically: Priam’s Treasure, after the legendary king of Troy from the Iliad.",
+      "start": 406.45,
+      "end": 413.25
+    },
+    {
+      "index": 45,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-shawl",
+      "text": "In his telling, he had personally spotted a glint of gold in the trench wall, dismissed his workers for the day so he could excavate it alone with his wife Sophia, and together they carried the treasure out wrapped in her shawl to keep it hidden from Ottoman officials, who — under the terms of his excavation permit — were legally entitled to a share of anything found.",
+      "start": 413.6,
+      "end": 440.8
+    },
+    {
+      "index": 46,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-shawl",
+      "text": "It’s a fantastic scene.",
+      "start": 441.5,
+      "end": 443.1
+    },
+    {
+      "index": 47,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-shawl",
+      "text": "Secretive, romantic, daring.",
+      "start": 443.45000000000005,
+      "end": 444.65000000000003
+    },
+    {
+      "index": 48,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-sophia",
+      "text": "It also appears to be at least partly fabricated.",
+      "start": 445.55,
+      "end": 449.15000000000003
+    },
+    {
+      "index": 49,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-sophia",
+      "text": "Sophia Schliemann’s own family later confirmed she wasn’t even at the excavation site on the day the treasure was supposedly found — she was visiting relatives elsewhere in Greece.",
+      "start": 449.50000000000006,
+      "end": 461.1000000000001
+    },
+    {
+      "index": 50,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-sophia",
+      "text": "Schliemann seems to have written her into the story afterward, likely to make the discovery feel more personal, more cinematic, more worthy of the legend he was building around himself.",
+      "start": 461.4500000000001,
+      "end": 473.4500000000001
+    },
+    {
+      "index": 51,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-smuggle",
+      "text": "And he did smuggle the gold — that part holds up.",
+      "start": 474.1500000000001,
+      "end": 478.55000000000007
+    },
+    {
+      "index": 52,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-smuggle",
+      "text": "He got the treasure out of Ottoman territory without permission, in violation of his agreement, and the Ottoman government was furious enough that Schliemann was later fined and temporarily banned from further excavation in the region.",
+      "start": 478.9000000000001,
+      "end": 493.30000000000007
+    },
+    {
+      "index": 53,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-date",
+      "text": "But here’s the detail that undermines the entire dramatic framing of “Priam’s Treasure”: the layer where Schliemann found it — Troy II — dates to somewhere around 2400 to 2600 BCE.",
+      "start": 494.00000000000006,
+      "end": 506.40000000000003
+    },
+    {
+      "index": 54,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-date",
+      "text": "The Trojan War, if it happened at all, is generally placed around 1200 BCE.",
+      "start": 506.75000000000006,
+      "end": 512.35
+    },
+    {
+      "index": 55,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-date",
+      "text": "That’s a gap of well over a thousand years.",
+      "start": 512.7,
+      "end": 516.3000000000001
+    },
+    {
+      "index": 56,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-date",
+      "text": "The gold Schliemann was so certain belonged to the legendary King Priam was already ancient history by the time the Trojan War, in any historical sense, could have taken place.",
+      "start": 517.4000000000001,
+      "end": 529.4000000000001
+    },
+    {
+      "index": 57,
+      "sectionId": "treasure",
+      "paragraphIndex": 3,
+      "imageId": "treasure-date",
+      "text": "He’d found something real, something genuinely valuable and important — just not the thing he claimed to have found.",
+      "start": 529.7500000000001,
+      "end": 537.3500000000001
+    },
+    {
+      "index": 58,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-ruins",
+      "text": "This is where Schliemann’s story gets genuinely complicated, in a way that a lot of quick retellings skip over.",
+      "start": 538.7500000000001,
+      "end": 546.3500000000001
+    },
+    {
+      "index": 59,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-ruins",
+      "text": "He was, in a very real sense, both wrong and right at the same time.",
+      "start": 546.7000000000002,
+      "end": 552.7000000000002
+    },
+    {
+      "index": 60,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-destroyed",
+      "text": "He was wrong about which layer of Hisarlik matched Homer’s Troy.",
+      "start": 553.6000000000001,
+      "end": 558.0000000000001
+    },
+    {
+      "index": 61,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-destroyed",
+      "text": "He was wrong about the treasure belonging to Priam.",
+      "start": 558.3500000000001,
+      "end": 561.9500000000002
+    },
+    {
+      "index": 62,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-destroyed",
+      "text": "He was wrong, by his own later admission, about several of the conclusions he rushed to publish.",
+      "start": 562.3000000000002,
+      "end": 569.1000000000001
+    },
+    {
+      "index": 63,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-destroyed",
+      "text": "And in his haste to find something spectacular, he physically destroyed archaeological evidence in the upper layers of the site — including, we now believe, evidence from Troy VIIa, the layer most modern scholars consider the best candidate for a war-era Troy — evidence that we can never fully recover, because he’d already dug through it before anyone understood its importance.",
+      "start": 569.4500000000002,
+      "end": 593.8500000000001
+    },
+    {
+      "index": 64,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-ruins",
+      "text": "And yet — he was right about the one thing every scholar of his era told him he was wrong about: that Troy was a real place, sitting at a real, identifiable location, and that a real, ancient, walled city existed there.",
+      "start": 594.5500000000002,
+      "end": 611.3500000000001
+    },
+    {
+      "index": 65,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-ruins",
+      "text": "Later, more careful excavations, led by Wilhelm Dörpfeld and then Carl Blegen in the following decades, went back through what Schliemann left behind, corrected his layer identifications, and confirmed that Hisarlik is, in fact, the site of ancient Troy.",
+      "start": 611.7000000000002,
+      "end": 627.3000000000002
+    },
+    {
+      "index": 66,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-ruins",
+      "text": "He got the address right and almost everything else about the story wrong.",
+      "start": 628.2000000000002,
+      "end": 633.4000000000002
+    },
+    {
+      "index": 67,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-dorpfeld",
+      "text": "To his credit, Schliemann did eventually bring on more rigorous help.",
+      "start": 634.1000000000003,
+      "end": 638.5000000000002
+    },
+    {
+      "index": 68,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-dorpfeld",
+      "text": "Wilhelm Dörpfeld, a trained architect and archaeologist, joined his later excavations and pushed for far more careful, systematic methods than Schliemann had used on his own.",
+      "start": 638.8500000000003,
+      "end": 649.2500000000002
+    },
+    {
+      "index": 69,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-dorpfeld",
+      "text": "It was Dörpfeld who first proposed that the war-era Troy was likely a different, higher layer than the one Schliemann had first celebrated — a correction Schliemann, to his credit, eventually accepted, even though it meant walking back some of his own earlier claims.",
+      "start": 649.6000000000003,
+      "end": 667.2000000000003
+    },
+    {
+      "index": 70,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-dorpfeld",
+      "text": "Decades later, American archaeologist Carl Blegen led an even more thorough excavation in the 1930s, finally pinning down Troy VIIa as the layer most consistent with a violent, war-era destruction around 1180 BCE — the layer we talked about in the last video.",
+      "start": 667.5500000000003,
+      "end": 684.7500000000003
+    },
+    {
+      "index": 71,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-blegen",
+      "text": "So the real story of “finding Troy” isn’t really one man’s triumph.",
+      "start": 685.6500000000003,
+      "end": 690.4500000000003
+    },
+    {
+      "index": 72,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-blegen",
+      "text": "It’s a relay race across three generations of excavators, each one correcting the mistakes of the last — and Schliemann just happens to be the one whose name ended up on the headline.",
+      "start": 690.8000000000003,
+      "end": 704.0000000000003
+    },
+    {
+      "index": 73,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-question",
+      "text": "Which raises an uncomfortable question for how we tell history: do we remember Heinrich Schliemann as the brilliant amateur who succeeded where trained scholars had failed — or as a reckless treasure hunter who got lucky, destroyed irreplaceable evidence, and then lied about the details to make himself the hero of his own story?",
+      "start": 704.7000000000004,
+      "end": 726.3000000000004
+    },
+    {
+      "index": 74,
+      "sectionId": "wrong-right",
+      "paragraphIndex": 4,
+      "imageId": "right-question",
+      "text": "The honest answer, based on everything we actually know, is probably both.",
+      "start": 727.4000000000004,
+      "end": 732.2000000000004
+    },
+    {
+      "index": 75,
+      "sectionId": "legacy",
+      "paragraphIndex": 5,
+      "imageId": "legacy-modern",
+      "text": "Whatever you think of his methods, Schliemann’s excavation changed archaeology permanently — partly by proving that legendary “mythical” places could have real physical locations worth searching for, and partly as a cautionary example of exactly how not to excavate a historically important site.",
+      "start": 733.6000000000004,
+      "end": 750.8000000000004
+    },
+    {
+      "index": 76,
+      "sectionId": "legacy",
+      "paragraphIndex": 5,
+      "imageId": "legacy-modern",
+      "text": "Modern archaeological techniques — careful stratigraphy, detailed layer-by-layer documentation, painstaking preservation of context — developed in large part as a direct reaction against the kind of destructive, glory-chasing methods Schliemann used at Hisarlik.",
+      "start": 751.1500000000004,
+      "end": 764.3500000000005
+    },
+    {
+      "index": 77,
+      "sectionId": "legacy",
+      "paragraphIndex": 5,
+      "imageId": "legacy-modern",
+      "text": "In a strange way, his mistakes were almost as influential as his discovery.",
+      "start": 765.2500000000005,
+      "end": 770.4500000000005
+    },
+    {
+      "index": 78,
+      "sectionId": "legacy",
+      "paragraphIndex": 5,
+      "imageId": "legacy-tangled",
+      "text": "And that, honestly, might be the most fitting outcome possible for this particular story.",
+      "start": 771.1500000000005,
+      "end": 776.7500000000006
+    },
+    {
+      "index": 79,
+      "sectionId": "legacy",
+      "paragraphIndex": 5,
+      "imageId": "legacy-tangled",
+      "text": "Schliemann spent his life chasing a legend, and in the process, became one himself — a figure whose real accomplishments and self-invented myths are now so tangled together that separating them, more than 150 years later, still takes real work.",
+      "start": 777.1000000000006,
+      "end": 793.1000000000006
+    },
+    {
+      "index": 80,
+      "sectionId": "legacy",
+      "paragraphIndex": 5,
+      "imageId": "legacy-tangled",
+      "text": "Sound familiar?",
+      "start": 794.0000000000006,
+      "end": 795.2000000000006
+    },
+    {
+      "index": 81,
+      "sectionId": "outro",
+      "paragraphIndex": 6,
+      "imageId": "outro-theme",
+      "text": "If there’s a theme connecting this channel, it’s this: almost every great historical story has a real event buried somewhere underneath layers of exaggeration, myth, and people rewriting the record to make themselves look better.",
+      "start": 796.6000000000006,
+      "end": 810.6000000000006
+    },
+    {
+      "index": 82,
+      "sectionId": "outro",
+      "paragraphIndex": 6,
+      "imageId": "outro-theme",
+      "text": "Heinrich Schliemann didn’t just find a lost city.",
+      "start": 811.5000000000006,
+      "end": 814.7000000000006
+    },
+    {
+      "index": 83,
+      "sectionId": "outro",
+      "paragraphIndex": 6,
+      "imageId": "outro-theme",
+      "text": "He became a perfect case study in how history gets shaped by the people who tell it — for better and for worse.",
+      "start": 815.0500000000006,
+      "end": 824.2500000000007
+    },
+    {
+      "index": 84,
+      "sectionId": "outro",
+      "paragraphIndex": 6,
+      "imageId": "outro-troy",
+      "text": "If you enjoyed this one, my previous video covers the full story of the Trojan War itself, and exactly how much of it holds up against the archaeology Schliemann helped uncover — so if you haven’t seen that one yet, that’s a great place to go next.",
+      "start": 824.9500000000007,
+      "end": 843.7500000000007
+    },
+    {
+      "index": 85,
+      "sectionId": "outro",
+      "paragraphIndex": 6,
+      "imageId": "outro-troy",
+      "text": "Thanks for watching.",
+      "start": 844.8500000000007,
+      "end": 846.0500000000008
+    },
+    {
+      "index": 86,
+      "sectionId": "outro",
+      "paragraphIndex": 6,
+      "imageId": "outro-troy",
+      "text": "I’ll see you in the next one.",
+      "start": 846.4000000000008,
+      "end": 849.2000000000007
+    }
+  ],
+  "sections": [
+    {
+      "id": "hook",
+      "title": "THE MAN WHO LIED HIS WAY TO TROY",
+      "start": 0,
+      "end": 78.80000000000001
+    },
+    {
+      "id": "obsession",
+      "title": "THE OBSESSION",
+      "start": 78.80000000000001,
+      "end": 193.74999999999994
+    },
+    {
+      "id": "dig",
+      "title": "THE DIG",
+      "start": 193.74999999999994,
+      "end": 387.55
+    },
+    {
+      "id": "treasure",
+      "title": "THE TREASURE AND THE LIE",
+      "start": 387.55,
+      "end": 538.7500000000001
+    },
+    {
+      "id": "wrong-right",
+      "title": "BEING WRONG AND STILL BEING RIGHT",
+      "start": 538.7500000000001,
+      "end": 733.6000000000004
+    },
+    {
+      "id": "legacy",
+      "title": "THE LEGACY",
+      "start": 733.6000000000004,
+      "end": 796.6000000000006
+    },
+    {
+      "id": "outro",
+      "title": "EVERY LEGEND HAS A LAYER OF TRUTH",
+      "start": 796.6000000000006,
+      "end": 849.9000000000008
+    }
+  ],
+  "shots": [
+    {
+      "imageId": "hook-trench",
+      "start": 0,
+      "end": 25.1
+    },
+    {
+      "imageId": "hook-credit",
+      "start": 25.1,
+      "end": 32
+    },
+    {
+      "imageId": "hook-portrait",
+      "start": 32,
+      "end": 49.150000000000006
+    },
+    {
+      "imageId": "hook-question",
+      "start": 49.150000000000006,
+      "end": 66.2
+    },
+    {
+      "imageId": "hook-title",
+      "start": 66.2,
+      "end": 78.80000000000001
+    },
+    {
+      "imageId": "obsession-book",
+      "start": 78.80000000000001,
+      "end": 107.1
+    },
+    {
+      "imageId": "obsession-letters",
+      "start": 107.1,
+      "end": 150.99999999999997
+    },
+    {
+      "imageId": "obsession-merchant",
+      "start": 150.99999999999997,
+      "end": 181.19999999999996
+    },
+    {
+      "imageId": "obsession-homer",
+      "start": 181.19999999999996,
+      "end": 193.74999999999994
+    },
+    {
+      "imageId": "dig-dardanelles",
+      "start": 193.74999999999994,
+      "end": 213.84999999999994
+    },
+    {
+      "imageId": "dig-calvert",
+      "start": 213.84999999999994,
+      "end": 239.99999999999991
+    },
+    {
+      "imageId": "dig-partnership",
+      "start": 239.99999999999991,
+      "end": 294.2499999999999
+    },
+    {
+      "imageId": "dig-crews",
+      "start": 294.2499999999999,
+      "end": 323.7499999999999
+    },
+    {
+      "imageId": "dig-trench",
+      "start": 323.7499999999999,
+      "end": 349.99999999999994
+    },
+    {
+      "imageId": "dig-layers",
+      "start": 349.99999999999994,
+      "end": 387.55
+    },
+    {
+      "imageId": "treasure-gold",
+      "start": 387.55,
+      "end": 406.45
+    },
+    {
+      "imageId": "treasure-shawl",
+      "start": 406.45,
+      "end": 445.55
+    },
+    {
+      "imageId": "treasure-sophia",
+      "start": 445.55,
+      "end": 474.1500000000001
+    },
+    {
+      "imageId": "treasure-smuggle",
+      "start": 474.1500000000001,
+      "end": 494.00000000000006
+    },
+    {
+      "imageId": "treasure-date",
+      "start": 494.00000000000006,
+      "end": 538.7500000000001
+    },
+    {
+      "imageId": "right-ruins",
+      "start": 538.7500000000001,
+      "end": 553.6000000000001
+    },
+    {
+      "imageId": "right-destroyed",
+      "start": 553.6000000000001,
+      "end": 594.5500000000002
+    },
+    {
+      "imageId": "right-ruins",
+      "start": 594.5500000000002,
+      "end": 634.1000000000003
+    },
+    {
+      "imageId": "right-dorpfeld",
+      "start": 634.1000000000003,
+      "end": 685.6500000000003
+    },
+    {
+      "imageId": "right-blegen",
+      "start": 685.6500000000003,
+      "end": 704.7000000000004
+    },
+    {
+      "imageId": "right-question",
+      "start": 704.7000000000004,
+      "end": 733.6000000000004
+    },
+    {
+      "imageId": "legacy-modern",
+      "start": 733.6000000000004,
+      "end": 771.1500000000005
+    },
+    {
+      "imageId": "legacy-tangled",
+      "start": 771.1500000000005,
+      "end": 796.6000000000006
+    },
+    {
+      "imageId": "outro-theme",
+      "start": 796.6000000000006,
+      "end": 824.9500000000007
+    },
+    {
+      "imageId": "outro-troy",
+      "start": 824.9500000000007,
+      "end": 849.9000000000008
+    }
+  ]
+}
