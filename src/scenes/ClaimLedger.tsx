@@ -33,6 +33,7 @@ function mulberry32(seed: number) {
 }
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
 const remap01 = (p: number, a: number, b: number) => clamp01((p - a) / Math.max(1e-6, b - a));
 
@@ -62,8 +63,11 @@ export const ClaimLedger: React.FC<SceneProps> = ({ progress, frame, fps, seed, 
 
   const seedInt = Math.floor(seed * 1e9) + 1;
 
-  // Static paper speckle, plus a very slow continuous drift applied to the
-  // whole layer (translate only — cheap, and never a per-frame filter).
+  // Static paper speckle, each with its own slow, independent twinkle
+  // phase/speed — the aggregate reads as organic film-grain flicker rather
+  // than one discrete repeating event, and it never runs out of new-looking
+  // motion even across a very long hold. Positions are fixed (seeded once);
+  // only opacity and a whole-layer drift move per frame.
   const grain = useMemo(() => {
     const rand = mulberry32(seedInt + 29);
     return Array.from({ length: 90 }, () => ({
@@ -71,11 +75,13 @@ export const ClaimLedger: React.FC<SceneProps> = ({ progress, frame, fps, seed, 
       y: rand() * 1080,
       r: 0.5 + rand() * 1,
       o: 0.02 + rand() * 0.045,
+      phase: rand() * Math.PI * 2,
+      speed: 0.25 + rand() * 0.4,
     }));
   }, [seedInt]);
   const driftT = frame / fps;
-  const grainDriftX = Math.sin(driftT * 0.05) * 6;
-  const grainDriftY = Math.cos(driftT * 0.04) * 4;
+  const grainDriftX = Math.sin(driftT * ((Math.PI * 2) / 6.5)) * 5;
+  const grainDriftY = Math.cos(driftT * ((Math.PI * 2) / 8)) * 3.5;
 
   const n = rows.length;
   const headerFade = easeOutCubic(remap01(progress, 0, 0.12));
@@ -102,11 +108,19 @@ export const ClaimLedger: React.FC<SceneProps> = ({ progress, frame, fps, seed, 
         }}
       />
 
-      {/* Paper grain — static pattern, slow continuous drift via transform */}
+      {/* Paper grain — fixed positions, slow whole-layer drift plus a
+          per-dot twinkle so the texture is always quietly alive. */}
       <svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{ position: 'absolute', inset: 0 }}>
         <g transform={`translate(${grainDriftX},${grainDriftY})`}>
           {grain.map((g, i) => (
-            <circle key={i} cx={g.x} cy={g.y} r={g.r} fill={PALETTE.bone} opacity={g.o} />
+            <circle
+              key={i}
+              cx={g.x}
+              cy={g.y}
+              r={g.r}
+              fill={PALETTE.bone}
+              opacity={g.o * (0.55 + 0.45 * Math.sin(driftT * g.speed + g.phase))}
+            />
           ))}
         </g>
       </svg>

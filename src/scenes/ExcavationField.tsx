@@ -368,7 +368,7 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, frame, fps, se
       const remaining = comp.bandCount - i;
       const h = Math.max(18, (total - (cursor - top)) / remaining) * lerp(0.75, 1.25, rng());
       const cTop = rng();
-      const shadeAmt = lerp(-0.22, 0.22, rng());
+      const shadeAmt = lerp(-0.13, 0.13, rng());
       bands.push({
         top: cursor - top, // relative to the ground wrapper
         height: h,
@@ -459,6 +459,8 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, frame, fps, se
           {strataBands.map((b, i) => {
             const base = lerpColor(preset.strataA, preset.strataB, b.colorMix);
             const [r, g, bl] = shade(base, b.shadeAmt);
+            const [r2, g2, bl2] = shade(base, b.shadeAmt - 0.09);
+            const op = b.opacity * (0.6 + 0.4 * settle);
             return (
               <div
                 key={i}
@@ -468,9 +470,13 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, frame, fps, se
                   right: 0,
                   top: b.top,
                   height: b.height,
-                  background: rgbToStr([r, g, bl], b.opacity * (0.6 + 0.4 * settle)),
-                  borderTop: '1px solid rgba(255,235,200,0.06)',
-                  boxShadow: 'inset 0 6px 10px -6px rgba(0,0,0,0.5)',
+                  // A gentle internal gradient rather than a flat fill, so a
+                  // band never reads as a solid highlighted bar.
+                  background: `linear-gradient(180deg, ${rgbToStr([r, g, bl], op)} 0%, ${rgbToStr(
+                    [r2, g2, bl2],
+                    op
+                  )} 100%)`,
+                  borderTop: '1px solid rgba(255,235,200,0.05)',
                 }}
               />
             );
