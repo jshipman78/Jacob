@@ -6,7 +6,7 @@ import '@fontsource/cinzel/600.css';
 import '@fontsource/cinzel/700.css';
 
 import type { Timing } from './types';
-import { ImageShots } from './components/ImageShots';
+import { ShotScenes } from './components/ShotScenes';
 import { Vignette } from './components/Vignette';
 import { Subtitles } from './components/Subtitles';
 import { SectionTitles } from './components/SectionTitles';
@@ -37,7 +37,7 @@ export const TroyVideo: React.FC<TroyVideoProps> = ({ timing }) => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
-      <ImageShots
+      <ShotScenes
         shots={timing.shots}
         fps={timing.fps}
         totalDurationInFrames={durationInFrames}
