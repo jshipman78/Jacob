@@ -7,3 +7,6 @@ public/audio/
 .env.local
 out/check/
 src/scenes/__preview*/
+
+# generated pipeline working state
+pipeline/work/
