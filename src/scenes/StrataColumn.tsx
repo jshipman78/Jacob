@@ -150,22 +150,20 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
     });
   }, [bands, seedInt]);
 
-  // Texture speckles per band, memoized on seed.
+  // Texture speckles per band, memoized on seed. 'stone' bands get a
+  // coursed-masonry grid of thin outlined blocks (mortar lines), not
+  // filled blotches — the rest get sparse grit dots.
   const speckleData = useMemo(() => {
     return bands.map((b) => {
       const rand = b.rand;
-      const count =
-        b.texture === 'stone'
-          ? Math.round(4 + b.weight * 5)
-          : Math.round(6 + b.weight * 9);
+      const count = b.texture === 'stone' ? Math.round(4 + b.weight * 5) : Math.round(6 + b.weight * 9);
       const items: { x: number; y: number; w: number; h: number; c: string; op: number; kind: string }[] = [];
       for (let k = 0; k < count; k++) {
         const x = COL_X + 14 + rand() * (COL_W - 28);
         const y = b.topY + 6 + rand() * Math.max(4, b.h - 12);
         if (b.texture === 'stone') {
-          const w = 34 + rand() * 70;
-          const h = Math.min(b.h - 8, 14 + rand() * 20);
-          items.push({ x, y, w, h, c: rand() > 0.5 ? '#00000030' : '#ffffff14', op: 0.5 + rand() * 0.4, kind: 'rect' });
+          const r = 0.8 + rand() * 1.6;
+          items.push({ x, y, w: r, h: r, c: rand() > 0.5 ? '#00000040' : '#ffffff14', op: 0.3 + rand() * 0.3, kind: 'dot' });
         } else if (b.texture === 'ash') {
           const isEmber = rand() < 0.16;
           const r = isEmber ? 2 + rand() * 2 : 1 + rand() * 2;
@@ -182,6 +180,32 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
       return items;
     });
   }, [bands]);
+
+  // Coursed-masonry block grid for 'stone' bands (VI, VIII, IX) — thin
+  // mortar-line outlines in a running-bond pattern, not filled blotches.
+  const stoneBlocks = useMemo(() => {
+    return bands.map((b) => {
+      if (b.texture !== 'stone') return [] as { x: number; y: number; w: number; h: number; shade: number }[];
+      const rand = mulberry32(seedInt + 60000 + b.index * 71);
+      const rows = Math.max(2, Math.round(b.h / 24));
+      const rowH = b.h / rows;
+      const blocks: { x: number; y: number; w: number; h: number; shade: number }[] = [];
+      for (let r = 0; r < rows; r++) {
+        const rowY = b.topY + r * rowH;
+        let x = COL_X - (r % 2) * 45 - rand() * 20;
+        while (x < COL_X + COL_W) {
+          const w = 58 + rand() * 40;
+          const left = Math.max(COL_X, x);
+          const right = Math.min(COL_X + COL_W, x + w);
+          if (right - left > 6) {
+            blocks.push({ x: left, y: rowY + 1.5, w: right - left, h: Math.max(6, rowH - 4), shade: (rand() - 0.5) * 2 });
+          }
+          x += w + 4;
+        }
+      }
+      return blocks;
+    });
+  }, [bands, seedInt]);
 
   // Fine sediment sifting down through the whole section, continuously, for
   // the entire shot. Each particle loops through the column height but
@@ -322,6 +346,21 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
                   }}
                 >
                   <rect x={COL_X} y={bandTop} width={COL_W} height={bandHeight} fill={`url(#grad-${b.id})`} />
+                  {b.texture === 'stone' &&
+                    stoneBlocks[b.index].map((s, si) => (
+                      <rect
+                        key={`stone-${si}`}
+                        x={s.x}
+                        y={s.y}
+                        width={s.w}
+                        height={s.h}
+                        fill="none"
+                        stroke={s.shade > 0 ? '#ffffff' : '#000000'}
+                        strokeOpacity={0.1 + Math.abs(s.shade) * 0.05}
+                        strokeWidth={1}
+                        rx={1}
+                      />
+                    ))}
                   {speckleData[b.index].map((s, si) =>
                     s.kind === 'rect' ? (
                       <rect key={si} x={s.x} y={s.y} width={s.w} height={s.h} fill={s.c} opacity={s.op} rx={2} />

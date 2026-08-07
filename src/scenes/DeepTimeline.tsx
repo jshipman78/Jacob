@@ -13,13 +13,17 @@ import { SAFE_AREA, PALETTE } from './types';
  * happened, was around 1200 BCE. That is well over a thousand years of
  * separation — so the gold could not have belonged to Priam.
  *
- * A single honest, linear deep-time axis. The whole shot is one continuous
- * move: a scan line travels left-to-right across the axis at a pace tied
- * directly to `progress` (progress literally *is* position on the axis),
- * drawing the line as it goes and waking each marker as it arrives. While
- * the scanner crosses the gap between Troy II and the war date, a
- * measuring bracket extends and a year-counter accumulates in step with
- * it — the gap is measured out in front of the viewer, not just labelled.
+ * A single honest, linear deep-time axis spanning nearly the full frame,
+ * vertically centred in the usable area (the only region genuinely kept
+ * calm is the bottom subtitle band). The structural axis — the line, the
+ * ruler ticks, the year labels — is drawn in full early on, so the frame
+ * always reads as a complete, designed composition. On top of that
+ * finished axis, a continuous scan cursor travels left-to-right at a pace
+ * tied directly to `progress` (progress literally *is* position on the
+ * axis), waking each marker as it arrives. While the scanner crosses the
+ * gap between Troy II and the war date, a measuring bracket extends and a
+ * year-counter accumulates in step with it — the gap is measured out in
+ * front of the viewer, not just labelled.
  */
 
 function mulberry32(seed: number) {
@@ -40,8 +44,6 @@ const easeInOutCubic = (t: number) => {
   const x = clamp01(t);
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 };
-// Smooth 0->1->0 rise-and-hold-and-fall isn't needed here; this is a plain
-// smoothstep used to soften marker "arrival" as the scanner passes them.
 const smoothstep = (edge0: number, edge1: number, x: number) => {
   const t = clamp01((x - edge0) / (edge1 - edge0));
   return t * t * (3 - 2 * t);
@@ -54,13 +56,14 @@ const formatWithCommas = (n: number) => {
 const formatYear = (y: number) => (y < 0 ? `${formatWithCommas(-y)} BCE` : y === 0 ? '0' : `${formatWithCommas(y)} CE`);
 
 // A purely linear deep-time axis, honestly labelled — no log scale, so the
-// gap between Troy II and the war reads at its true relative size.
+// gap between Troy II and the war reads at its true relative size. Spans
+// nearly the full frame width.
 const DOMAIN_MIN = -3000;
 const DOMAIN_MAX = 2000;
-const AXIS_X0 = 200;
-const AXIS_X1 = 1720;
-const AXIS_Y = 470;
-const MARKER_TOP_Y = 300;
+const AXIS_X0 = 140;
+const AXIS_X1 = 1780;
+const AXIS_Y = 540;
+const MARKER_TOP_Y = 320;
 
 const mapX = (year: number) =>
   lerp(AXIS_X0, AXIS_X1, (year - DOMAIN_MIN) / (DOMAIN_MAX - DOMAIN_MIN));
@@ -114,17 +117,24 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
   // slowly with the scan so the field never feels frozen.
   const dust = useMemo(() => {
     const rand = mulberry32(seedInt + 4);
-    return Array.from({ length: 40 }).map(() => ({
+    return Array.from({ length: 44 }).map(() => ({
       x: rand() * 1920,
-      y: rand() * 260,
-      r: 0.6 + rand() * 1.2,
+      y: 60 + rand() * 220,
+      r: 0.6 + rand() * 1.3,
       op: 0.05 + rand() * 0.12,
       driftSpeed: 4 + rand() * 10,
     }));
   }, [seedInt]);
 
+  // --- The structural axis: line, ruler ticks, year labels — drawn in
+  // full early on, so the frame always reads as one complete, designed
+  // composition rather than a chart still being built.
+  const axisT = easeOutCubic(progress / 0.12);
+
   // --- The scan: progress *is* position on the axis. The whole shot is a
-  // single continuous, eased traversal from the deep past to the present.
+  // single continuous, eased traversal from the deep past to the present,
+  // driving marker arrivals and the gap measurement on top of the
+  // already-drawn axis.
   const scanT = easeInOutCubic(progress);
   const scanX = lerp(AXIS_X0, AXIS_X1, scanT);
 
@@ -142,7 +152,7 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
     <AbsoluteFill style={{ backgroundColor: PALETTE.ink, overflow: 'hidden' }}>
       <AbsoluteFill
         style={{
-          background: `radial-gradient(ellipse 900px 480px at ${scanX}px 260px, ${PALETTE.soilWarm}3a 0%, transparent 75%)`,
+          background: `radial-gradient(ellipse 1300px 560px at ${scanX}px 300px, ${PALETTE.soilWarm}3a 0%, transparent 75%)`,
         }}
       />
 
@@ -164,28 +174,19 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
           return <circle key={i} cx={x} cy={d.y} r={d.r} fill={PALETTE.bone} opacity={d.op} />;
         })}
 
-        {/* Axis line — grows with the scanner, a continuous draw for the
-            whole shot. */}
-        <line x1={AXIS_X0} y1={AXIS_Y} x2={scanX} y2={AXIS_Y} stroke={PALETTE.bone} strokeOpacity={0.55} strokeWidth={1.5} />
-        {/* Faint full-length guide so the destination reads immediately. */}
-        <line x1={scanX} y1={AXIS_Y} x2={AXIS_X1} y2={AXIS_Y} stroke={PALETTE.ash} strokeOpacity={0.14} strokeWidth={1} />
+        {/* Axis line — the full backbone, present from early on. */}
+        <line x1={AXIS_X0} y1={AXIS_Y} x2={AXIS_X1} y2={AXIS_Y} stroke={PALETTE.bone} strokeOpacity={0.55 * axisT} strokeWidth={1.8} />
 
-        {/* Minor ruler ticks, revealed as the scanner passes */}
-        {minorTicks.map((y) => {
-          const x = mapX(y);
-          const t = smoothstep(x - 30, x + 6, scanX);
-          if (t <= 0.01) return null;
-          return <line key={`minor-${y}`} x1={x} y1={AXIS_Y - 5} x2={x} y2={AXIS_Y + 5} stroke={PALETTE.ash} strokeOpacity={0.22 * t} strokeWidth={1} />;
-        })}
-        {majorTicks.map((y) => {
-          const x = mapX(y);
-          const t = smoothstep(x - 30, x + 6, scanX);
-          if (t <= 0.01) return null;
-          return <line key={`major-${y}`} x1={x} y1={AXIS_Y - 10} x2={x} y2={AXIS_Y + 10} stroke={PALETTE.ash} strokeOpacity={0.5 * t} strokeWidth={1.2} />;
-        })}
+        {/* Minor ruler ticks */}
+        {minorTicks.map((y) => (
+          <line key={`minor-${y}`} x1={mapX(y)} y1={AXIS_Y - 6} x2={mapX(y)} y2={AXIS_Y + 6} stroke={PALETTE.ash} strokeOpacity={0.22 * axisT} strokeWidth={1} />
+        ))}
+        {majorTicks.map((y) => (
+          <line key={`major-${y}`} x1={mapX(y)} y1={AXIS_Y - 12} x2={mapX(y)} y2={AXIS_Y + 12} stroke={PALETTE.ash} strokeOpacity={0.5 * axisT} strokeWidth={1.4} />
+        ))}
 
         {/* Markers: era bands and point ticks — wake as the scanner
-            reaches them. */}
+            reaches them, on top of the already-drawn axis. */}
         {markers.map((m, i) => {
           if (m.kind === 'era') {
             const span = m.span ?? [m.year - 125, m.year + 125];
@@ -199,21 +200,22 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
             return (
               <g key={i} opacity={arrive}>
                 <rect x={x0} y={MARKER_TOP_Y} width={w} height={AXIS_Y - MARKER_TOP_Y} fill="url(#eraBandFade)" opacity={pulse} />
-                <line x1={x0} y1={MARKER_TOP_Y} x2={x0} y2={AXIS_Y} stroke={PALETTE.goldBright} strokeOpacity={0.5} strokeWidth={1.3} />
-                {fillT > 0.97 && <line x1={x1} y1={MARKER_TOP_Y} x2={x1} y2={AXIS_Y} stroke={PALETTE.goldBright} strokeOpacity={0.5} strokeWidth={1.3} />}
+                <line x1={x0} y1={MARKER_TOP_Y} x2={x0} y2={AXIS_Y} stroke={PALETTE.goldBright} strokeOpacity={0.55} strokeWidth={1.6} />
+                {fillT > 0.97 && <line x1={x1} y1={MARKER_TOP_Y} x2={x1} y2={AXIS_Y} stroke={PALETTE.goldBright} strokeOpacity={0.55} strokeWidth={1.6} />}
               </g>
             );
           }
           const x = mapX(m.year);
-          const topY = m.year > 1000 ? 380 : MARKER_TOP_Y; // shorter line for the far-right 1873 marker
+          const isFar = m.year > 1000;
+          const topY = isFar ? 460 : MARKER_TOP_Y; // shorter line for the far-right 1873 marker
           const arrive = smoothstep(x - 10, x + 10, scanX);
           if (arrive <= 0.01) return null;
           const flash = Math.max(0, 1 - Math.abs(scanX - x) / 26);
           return (
             <g key={i} opacity={arrive}>
-              <line x1={x} y1={topY} x2={x} y2={AXIS_Y} stroke={PALETTE.gold} strokeOpacity={0.55} strokeWidth={1.3} strokeDasharray={m.year > 1000 ? '3 5' : undefined} />
-              <circle cx={x} cy={AXIS_Y} r={4 + flash * 3} fill={PALETTE.gold} opacity={0.9} />
-              {flash > 0.05 && <circle cx={x} cy={AXIS_Y} r={10 + flash * 10} fill="none" stroke={PALETTE.goldBright} strokeOpacity={flash * 0.5} strokeWidth={1.2} />}
+              <line x1={x} y1={topY} x2={x} y2={AXIS_Y} stroke={PALETTE.gold} strokeOpacity={0.55} strokeWidth={1.6} strokeDasharray={isFar ? '3 5' : undefined} />
+              <circle cx={x} cy={AXIS_Y} r={5 + flash * 3.5} fill={PALETTE.gold} opacity={0.9} />
+              {flash > 0.05 && <circle cx={x} cy={AXIS_Y} r={12 + flash * 12} fill="none" stroke={PALETTE.goldBright} strokeOpacity={flash * 0.5} strokeWidth={1.4} />}
             </g>
           );
         })}
@@ -222,31 +224,30 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
             crosses it, the shot's whole reason for being. */}
         {scanX > gapX0 - 4 && (
           <g opacity={smoothstep(gapX0 - 20, gapX0 + 10, scanX)}>
-            <line x1={gapX0} y1={220} x2={Math.min(scanX, gapX1)} y2={220} stroke={PALETTE.goldBright} strokeWidth={2} />
-            <line x1={gapX0} y1={210} x2={gapX0} y2={230} stroke={PALETTE.goldBright} strokeWidth={2} />
-            {gapCrossT > 0.98 && <line x1={gapX1} y1={210} x2={gapX1} y2={230} stroke={PALETTE.goldBright} strokeWidth={2} />}
-            <line x1={gapX0} y1={230} x2={gapX0} y2={MARKER_TOP_Y} stroke={PALETTE.goldBright} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="2 5" />
-            {gapCrossT > 0.98 && <line x1={gapX1} y1={230} x2={gapX1} y2={MARKER_TOP_Y} stroke={PALETTE.goldBright} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="2 5" />}
+            <line x1={gapX0} y1={252} x2={Math.min(scanX, gapX1)} y2={252} stroke={PALETTE.goldBright} strokeWidth={2.4} />
+            <line x1={gapX0} y1={240} x2={gapX0} y2={264} stroke={PALETTE.goldBright} strokeWidth={2.4} />
+            {gapCrossT > 0.98 && <line x1={gapX1} y1={240} x2={gapX1} y2={264} stroke={PALETTE.goldBright} strokeWidth={2.4} />}
+            <line x1={gapX0} y1={264} x2={gapX0} y2={MARKER_TOP_Y} stroke={PALETTE.goldBright} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="2 5" />
+            {gapCrossT > 0.98 && <line x1={gapX1} y1={264} x2={gapX1} y2={MARKER_TOP_Y} stroke={PALETTE.goldBright} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="2 5" />}
             {/* Hatch marks accumulate along the bracket as it extends, so the
                 span reads as measured, not just drawn. */}
-            {Array.from({ length: Math.floor(gapCrossT * 24) }).map((_, hi) => {
-              const hx = lerp(gapX0, gapX1, hi / 24);
+            {Array.from({ length: Math.floor(gapCrossT * 26) }).map((_, hi) => {
+              const hx = lerp(gapX0, gapX1, hi / 26);
               if (hx > scanX) return null;
-              return <line key={hi} x1={hx} y1={216} x2={hx} y2={224} stroke={PALETTE.goldBright} strokeOpacity={0.5} strokeWidth={1} />;
+              return <line key={hi} x1={hx} y1={246} x2={hx} y2={258} stroke={PALETTE.goldBright} strokeOpacity={0.5} strokeWidth={1.2} />;
             })}
             {/* The scan cursor itself, while actively measuring */}
             {gapCrossT > 0.02 && gapCrossT < 0.999 && (
-              <circle cx={Math.min(scanX, gapX1)} cy={220} r={3.5} fill={PALETTE.goldBright} />
+              <circle cx={Math.min(scanX, gapX1)} cy={252} r={4} fill={PALETTE.goldBright} />
             )}
           </g>
         )}
 
         {/* The scan line — the primary continuous motion of the shot */}
-        <rect x={scanX - 1.5} y={40} width={3} height={AXIS_Y - 40} fill="url(#scanGlow)" opacity={progress < 0.985 ? 0.9 : 0.9 * (1 - (progress - 0.985) / 0.015)} />
+        <rect x={scanX - 1.5} y={70} width={3} height={AXIS_Y - 70} fill="url(#scanGlow)" opacity={progress < 0.985 ? 0.9 : 0.9 * (1 - (progress - 0.985) / 0.015)} />
 
-        {/* Contrast relief across the section-title safe band */}
-        <rect x={0} y={SAFE_AREA.titleBandTop} width={1920} height={SAFE_AREA.titleBandBottom - SAFE_AREA.titleBandTop} fill={PALETTE.ink} opacity={0.32} />
-        {/* Contrast relief across the subtitle safe band */}
+        {/* Contrast relief across the subtitle safe band only — the title
+            card carries its own scrim, so the rest of the frame is free. */}
         <rect x={0} y={1080 - SAFE_AREA.bottom} width={1920} height={SAFE_AREA.bottom} fill={PALETTE.ink} opacity={0.6} />
       </svg>
 
@@ -258,12 +259,12 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
           const span = m.span ?? [m.year - 125, m.year + 125];
           const cx = isEra ? (mapX(span[0]) + mapX(span[1])) / 2 : mapX(m.year);
           const isFar = m.year > 1000;
-          const labelY = isFar ? 350 : 246;
+          const labelY = isFar ? 430 : 266;
           const arrive = smoothstep(cx - 30, cx + 10, scanX);
           if (arrive <= 0.02) return null;
           return (
             <div
-              key={i}
+              key={`marker-${i}`}
               style={{
                 position: 'absolute',
                 left: cx,
@@ -278,8 +279,8 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
                 style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: 600,
-                  fontSize: isFar ? 14 : 17,
-                  letterSpacing: 1.5,
+                  fontSize: isFar ? 17 : 22,
+                  letterSpacing: 1.6,
                   color: isFar ? PALETTE.bone : PALETTE.goldBright,
                   textTransform: 'uppercase',
                 }}
@@ -290,10 +291,10 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
                 style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: 500,
-                  fontSize: 13,
+                  fontSize: 16,
                   letterSpacing: 0.6,
                   color: PALETTE.ash,
-                  marginTop: 3,
+                  marginTop: 4,
                 }}
               >
                 {isEra ? `${formatYear(Math.min(span[0], span[1]))} – ${formatYear(Math.max(span[0], span[1]))}` : formatYear(m.year)}
@@ -303,30 +304,25 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
         })}
 
         {/* Axis year labels */}
-        {majorTicks.map((y) => {
-          const x = mapX(y);
-          const t = smoothstep(x - 30, x + 6, scanX);
-          if (t <= 0.02) return null;
-          return (
-            <div
-              key={`lbl-${y}`}
-              style={{
-                position: 'absolute',
-                left: x,
-                top: AXIS_Y + 16,
-                transform: 'translateX(-50%)',
-                fontFamily: 'Inter, sans-serif',
-                fontWeight: 500,
-                fontSize: 12,
-                letterSpacing: 0.5,
-                color: PALETTE.ash,
-                opacity: 0.55 * t,
-              }}
-            >
-              {formatYear(y)}
-            </div>
-          );
-        })}
+        {majorTicks.map((y) => (
+          <div
+            key={`lbl-${y}`}
+            style={{
+              position: 'absolute',
+              left: mapX(y),
+              top: AXIS_Y + 20,
+              transform: 'translateX(-50%)',
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 500,
+              fontSize: 15,
+              letterSpacing: 0.5,
+              color: PALETTE.ash,
+              opacity: 0.55 * axisT,
+            }}
+          >
+            {formatYear(y)}
+          </div>
+        ))}
 
         {/* The hero: gap size ticking up live as the scanner measures it,
             then the single earned display word once it's complete. */}
@@ -335,7 +331,7 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
             style={{
               position: 'absolute',
               left: (gapX0 + gapX1) / 2,
-              top: 70,
+              top: 100,
               transform: 'translateX(-50%)',
               textAlign: 'center',
               opacity: Math.min(1, gapCrossT * 6),
@@ -345,10 +341,10 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
               style={{
                 fontFamily: 'Inter, sans-serif',
                 fontWeight: 700,
-                fontSize: 46,
+                fontSize: 66,
                 letterSpacing: 1,
                 color: PALETTE.goldBright,
-                textShadow: '0 2px 24px rgba(0,0,0,0.7)',
+                textShadow: '0 2px 28px rgba(0,0,0,0.7)',
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
@@ -362,7 +358,7 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
             style={{
               position: 'absolute',
               left: (gapX0 + gapX1) / 2,
-              top: 130,
+              top: 178,
               transform: 'translateX(-50%)',
               textAlign: 'center',
               opacity: wordT,
@@ -372,8 +368,8 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
               style={{
                 fontFamily: "'Cinzel', serif",
                 fontWeight: 600,
-                fontSize: 22,
-                letterSpacing: 7,
+                fontSize: 30,
+                letterSpacing: 9,
                 color: PALETTE.ember,
                 textTransform: 'uppercase',
               }}
@@ -388,7 +384,7 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
           style={{
             position: 'absolute',
             left: SAFE_AREA.edge,
-            top: 88,
+            top: 70,
             opacity: 0.6 * easeOutCubic(progress / 0.1),
           }}
         >
@@ -396,7 +392,7 @@ export const DeepTimeline: React.FC<SceneProps> = ({ progress, seed, options }) 
             style={{
               fontFamily: 'Inter, sans-serif',
               fontWeight: 600,
-              fontSize: 14,
+              fontSize: 15,
               letterSpacing: 3.5,
               color: PALETTE.ash,
               textTransform: 'uppercase',

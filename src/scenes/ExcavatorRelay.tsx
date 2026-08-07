@@ -13,13 +13,14 @@ import { SAFE_AREA, PALETTE } from './types';
  * the credit; Dörpfeld brought systematic method and proposed the war-era
  * layer was higher; Blegen's thorough dig pinned Troy VIIa, c. 1180 BCE.
  *
- * A time spine extends left to right across the WHOLE shot — driven
- * straight off `progress`, so the motion scales to any shot length — with a
- * bright travelling point (the "baton") running along it from Calvert
- * toward Blegen. Each station arrives as the baton reaches it. When
- * `highlight` names a station, that station comes forward (scale + full
- * contrast) once the baton has passed it, while the others settle back —
- * the emphasis itself ramping in smoothly, never a hard cut.
+ * A time spine spans nearly the full frame width, with a bright travelling
+ * point (the "baton") running along it from Calvert toward Blegen — the
+ * spine finishes drawing by ~62% of the shot, so every 26–55s shot spends
+ * most of its length holding the complete relay, not still assembling it.
+ * Each station arrives as the baton reaches it. When `highlight` names a
+ * station, that station comes forward (scale + full contrast) shortly after
+ * its own arrival, while the others settle back — the emphasis ramping in
+ * smoothly, never a hard cut.
  *
  * options:
  *   highlight?: 'calvert' | 'schliemann' | 'dorpfeld' | 'blegen'
@@ -39,10 +40,6 @@ function mulberry32(seed: number) {
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
-const easeInOutCubic = (t: number) => {
-  const x = clamp01(t);
-  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
-};
 const remap01 = (p: number, a: number, b: number) => clamp01((p - a) / Math.max(1e-6, b - a));
 
 type StationId = 'calvert' | 'schliemann' | 'dorpfeld' | 'blegen';
@@ -70,14 +67,27 @@ const STATIONS: Station[] = [
   { id: 'blegen', name: 'CARL BLEGEN', years: '1932–38', line: 'Thorough dig. Pinned Troy VIIa, c. 1180 BCE.' },
 ];
 
-const SPINE_Y = 290;
-const SPINE_X0 = 220;
-const SPINE_X1 = 1700;
+// Layout: the spine spans nearly the full frame, and the whole arrangement
+// is centred in the vertical space above the subtitle band (which starts at
+// 1080 - SAFE_AREA.bottom = 820) — only that bottom strip stays deliberately
+// calm.
+const SPINE_X0 = 140;
+const SPINE_X1 = 1780;
 const STATION_X = STATIONS.map((_, i) => SPINE_X0 + ((i + 0.5) / STATIONS.length) * (SPINE_X1 - SPINE_X0));
-const PLATE_Y = 166;
-const PLATE_R = 32;
-const ARRIVE_SOFTNESS = 85; // px window over which a station fades in as the baton nears it
-const EMPHASIS_SPAN = 230; // px of further baton travel over which highlight emphasis settles in
+const PLATE_Y = 250;
+const PLATE_R = 32; // base radius; MARK_SCALE below sets the on-screen size
+const MARK_SCALE = 1.7;
+const SPINE_Y = 440;
+const STATION_BOX_W = 400; // just under the ~410px station spacing, so
+// adjacent boxes never touch
+const CONTRIBUTION_MAX_W = 330; // narrower still, so the longer one-line
+// contributions wrap onto a comfortable two lines rather than crowding the
+// neighbouring station
+
+// The spine finishes drawing at this fraction of progress, then holds — so
+// long shots spend most of their length showing the complete relay rather
+// than still assembling it.
+const SPINE_DRAW_END = 0.62;
 
 // ---------------------------------------------------------------------------
 // Abstract, restrained per-person marks — geometric devices, not attempted
@@ -146,70 +156,71 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
   const seedInt = Math.floor(seed * 1e9) + 1;
   const grain = React.useMemo(() => {
     const rand = mulberry32(seedInt + 13);
-    return Array.from({ length: 50 }, () => ({
+    return Array.from({ length: 70 }, () => ({
       x: rand() * 1920,
-      y: SAFE_AREA.edge + rand() * (SAFE_AREA.titleBandTop - SAFE_AREA.edge - 20),
+      y: 40 + rand() * 740,
       r: 0.5 + rand() * 1,
       o: 0.03 + rand() * 0.05,
     }));
   }, [seedInt]);
 
-  // The spine draws continuously across the whole shot; the baton is its
-  // leading edge, so "spine extending" and "baton travelling" are the same
-  // motion, always in progress at any two nearby progress values.
-  const spineT = easeInOutCubic(progress);
+  // The spine draws at a steady pace and finishes by SPINE_DRAW_END, then
+  // holds fully drawn — so a station's arrival progress is exactly linear
+  // in its x position, easy to invert for per-station timing below.
+  const spineT = clamp01(remap01(progress, 0, SPINE_DRAW_END));
   const leadingX = lerp(SPINE_X0, SPINE_X1, spineT);
 
   const idleT = frame / fps;
+  // A gentle, continuous breathing scale on the parked baton once the spine
+  // has finished drawing, so the frame is never fully still even at rest.
+  const batonIdlePulse = Math.sin(idleT * ((Math.PI * 2) / 3.4)) * 0.5 + 0.5;
 
   return (
     <AbsoluteFill style={{ backgroundColor: PALETTE.ink, overflow: 'hidden' }}>
       <AbsoluteFill
         style={{
-          background: `radial-gradient(ellipse 1300px 500px at 50% 14%, ${PALETTE.soilWarm}30 0%, transparent 70%)`,
+          background: `radial-gradient(ellipse 1500px 800px at 50% 40%, ${PALETTE.soilWarm}28 0%, transparent 70%)`,
         }}
       />
 
-      {/* Static grain, confined to the working band */}
+      {/* Static grain across the working area */}
       <svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{ position: 'absolute', inset: 0 }}>
         {grain.map((g, i) => (
           <circle key={i} cx={g.x} cy={g.y} r={g.r} fill={PALETTE.bone} opacity={g.o} />
         ))}
 
         {/* Spine track (full extent, very faint, for context) */}
-        <line x1={SPINE_X0} y1={SPINE_Y} x2={SPINE_X1} y2={SPINE_Y} stroke={PALETTE.ash} strokeWidth={1} strokeOpacity={0.18} />
+        <line x1={SPINE_X0} y1={SPINE_Y} x2={SPINE_X1} y2={SPINE_Y} stroke={PALETTE.ash} strokeWidth={1} strokeOpacity={0.2} />
 
         {/* Spine draw-on */}
-        <line
-          x1={SPINE_X0}
-          y1={SPINE_Y}
-          x2={leadingX}
-          y2={SPINE_Y}
-          stroke={PALETTE.bronze}
-          strokeWidth={1.5}
-          strokeOpacity={0.75}
-        />
+        <line x1={SPINE_X0} y1={SPINE_Y} x2={leadingX} y2={SPINE_Y} stroke={PALETTE.bronze} strokeWidth={2} strokeOpacity={0.78} />
 
         {/* Travelling baton with a short fading trail */}
-        {[0, 24, 48, 74].map((back, i) => {
+        {[0, 26, 52, 80].map((back, i) => {
           const bx = Math.max(SPINE_X0, leadingX - back);
           const o = (1 - i * 0.26) * (i === 0 ? 1 : 0.5);
-          return <circle key={i} cx={bx} cy={SPINE_Y} r={i === 0 ? 5 : 3 - i * 0.4} fill={PALETTE.goldBright} opacity={o} />;
+          return <circle key={i} cx={bx} cy={SPINE_Y} r={i === 0 ? 6 : 3.4 - i * 0.4} fill={PALETTE.goldBright} opacity={o} />;
         })}
-        <circle cx={leadingX} cy={SPINE_Y} r={11} fill="none" stroke={PALETTE.goldBright} strokeWidth={1} opacity={0.35} />
+        <circle cx={leadingX} cy={SPINE_Y} r={13 + batonIdlePulse * 2.5} fill="none" stroke={PALETTE.goldBright} strokeWidth={1} opacity={0.32} />
 
         {STATIONS.map((st, i) => {
           const x = STATION_X[i];
-          const arrive = easeOutCubic(remap01(leadingX, x - ARRIVE_SOFTNESS, x + ARRIVE_SOFTNESS * 0.4));
-          const emphasis = hasHighlight ? easeOutCubic(remap01(leadingX, x + 30, x + 30 + EMPHASIS_SPAN)) : 0;
+          // The exact progress at which the linear baton reaches this
+          // station's x — inverted analytically, so timing and the visual
+          // baton position always agree exactly.
+          const arrivalProgress = (SPINE_DRAW_END * (x - SPINE_X0)) / (SPINE_X1 - SPINE_X0);
+          const arrive = easeOutCubic(remap01(progress, arrivalProgress - 0.04, arrivalProgress + 0.05));
+          const emphasis = hasHighlight
+            ? easeOutCubic(remap01(progress, arrivalProgress + 0.04, arrivalProgress + 0.2))
+            : 0;
           const isHi = st.id === highlight;
           const dim = hasHighlight && !isHi;
 
-          const scale = hasHighlight ? lerp(1, isHi ? 1.12 : 0.88, emphasis) : 1;
-          const fadeMul = hasHighlight ? lerp(1, isHi ? 1 : 0.42, emphasis) : 1;
+          const scale = MARK_SCALE * (hasHighlight ? lerp(1, isHi ? 1.14 : 0.86, emphasis) : 1);
+          const fadeMul = hasHighlight ? lerp(1, isHi ? 1 : 0.4, emphasis) : 1;
           const opacity = arrive * fadeMul;
 
-          const bob = Math.sin(idleT * ((Math.PI * 2) / 5) + i * 1.7) * (isHi ? 2.2 : 1.1);
+          const bob = Math.sin(idleT * ((Math.PI * 2) / 5) + i * 1.7) * (isHi ? 3.2 : 1.6);
           const glowPulse = isHi ? 0.5 + 0.5 * Math.sin(idleT * ((Math.PI * 2) / 4.2)) : 0;
 
           const markColor = isHi ? PALETTE.goldBright : dim ? PALETTE.ash : PALETTE.gold;
@@ -219,7 +230,7 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
               {/* Stem connecting plate to spine */}
               <line
                 x1={0}
-                y1={PLATE_Y + PLATE_R}
+                y1={PLATE_Y + PLATE_R * MARK_SCALE}
                 x2={0}
                 y2={SPINE_Y}
                 stroke={PALETTE.ash}
@@ -228,12 +239,19 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
               />
 
               {/* Node on the spine */}
-              <circle cx={0} cy={SPINE_Y} r={isHi ? 5.5 : 4} fill={isHi ? PALETTE.goldBright : dim ? PALETTE.soilWarm : PALETTE.gold} stroke={PALETTE.ink} strokeWidth={1} />
+              <circle
+                cx={0}
+                cy={SPINE_Y}
+                r={isHi ? 6.5 : 4.5}
+                fill={isHi ? PALETTE.goldBright : dim ? PALETTE.soilWarm : PALETTE.gold}
+                stroke={PALETTE.ink}
+                strokeWidth={1}
+              />
 
               {/* Plate */}
               <g transform={`translate(0,${PLATE_Y + bob}) scale(${scale})`}>
                 {isHi && (
-                  <circle r={PLATE_R + 10} fill="none" stroke={PALETTE.goldBright} strokeWidth={1} opacity={0.28 * arrive + 0.14 * glowPulse} />
+                  <circle r={PLATE_R + 11} fill="none" stroke={PALETTE.goldBright} strokeWidth={1} opacity={0.28 * arrive + 0.14 * glowPulse} />
                 )}
                 <circle r={PLATE_R} fill={PALETTE.soil} stroke={markColor} strokeOpacity={0.6} strokeWidth={1} />
                 {st.id === 'calvert' && <CalvertMark color={markColor} />}
@@ -245,39 +263,35 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
           );
         })}
 
-        {/* Contrast relief across the section-title safe band (spine and
-            plates sit above it, but keep any stray overlap calm). */}
-        <rect
-          x={0}
-          y={SAFE_AREA.titleBandTop}
-          width={1920}
-          height={SAFE_AREA.titleBandBottom - SAFE_AREA.titleBandTop}
-          fill={PALETTE.ink}
-          opacity={0.25}
-        />
-        <rect x={0} y={1080 - SAFE_AREA.bottom} width={1920} height={SAFE_AREA.bottom} fill={PALETTE.ink} opacity={0.55} />
+        {/* Contrast relief across the subtitle safe band only — the title
+            band is not a keep-out zone (the title card draws its own scrim
+            for the few seconds it's on screen). */}
+        <rect x={0} y={1080 - SAFE_AREA.bottom} width={1920} height={SAFE_AREA.bottom} fill={PALETTE.ink} opacity={0.5} />
       </svg>
 
       {/* Text labels — HTML for crisp Inter type */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         {STATIONS.map((st, i) => {
           const x = STATION_X[i];
-          const arrive = easeOutCubic(remap01(leadingX, x - ARRIVE_SOFTNESS, x + ARRIVE_SOFTNESS * 0.4));
-          const emphasis = hasHighlight ? easeOutCubic(remap01(leadingX, x + 30, x + 30 + EMPHASIS_SPAN)) : 0;
+          const arrivalProgress = (SPINE_DRAW_END * (x - SPINE_X0)) / (SPINE_X1 - SPINE_X0);
+          const arrive = easeOutCubic(remap01(progress, arrivalProgress - 0.04, arrivalProgress + 0.05));
+          const emphasis = hasHighlight
+            ? easeOutCubic(remap01(progress, arrivalProgress + 0.04, arrivalProgress + 0.2))
+            : 0;
           const isHi = st.id === highlight;
           const dim = hasHighlight && !isHi;
-          const fadeMul = hasHighlight ? lerp(1, isHi ? 1 : 0.42, emphasis) : 1;
+          const fadeMul = hasHighlight ? lerp(1, isHi ? 1 : 0.4, emphasis) : 1;
           const opacity = arrive * fadeMul;
-          const drift = (1 - arrive) * 10;
+          const drift = (1 - arrive) * 12;
 
           return (
             <div
               key={st.id}
               style={{
                 position: 'absolute',
-                left: x - 200,
-                top: SPINE_Y + 10,
-                width: 400,
+                left: x - STATION_BOX_W / 2,
+                top: SPINE_Y + 34,
+                width: STATION_BOX_W,
                 textAlign: 'center',
                 opacity,
                 transform: `translateY(${drift}px)`,
@@ -287,8 +301,8 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
                 style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: 500,
-                  fontSize: 11.5,
-                  letterSpacing: 1.5,
+                  fontSize: 16,
+                  letterSpacing: 2,
                   color: isHi ? PALETTE.gold : PALETTE.ash,
                 }}
               >
@@ -298,10 +312,10 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
                 style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: isHi ? 700 : 600,
-                  fontSize: isHi ? 21 : 18,
-                  letterSpacing: 1.5,
+                  fontSize: isHi ? 34 : 29,
+                  letterSpacing: 1,
                   color: isHi ? PALETTE.goldBright : dim ? PALETTE.ash : PALETTE.bone,
-                  marginTop: 4,
+                  marginTop: 8,
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -311,12 +325,15 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
                 style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: 400,
-                  fontSize: 12.5,
-                  lineHeight: 1.35,
+                  fontSize: 18,
+                  lineHeight: 1.4,
                   letterSpacing: 0.2,
                   color: isHi ? PALETTE.bone : PALETTE.ash,
-                  marginTop: 5,
+                  marginTop: 12,
                   opacity: isHi ? 0.95 : 0.7,
+                  maxWidth: CONTRIBUTION_MAX_W,
+                  marginLeft: 'auto',
+                  marginRight: 'auto',
                 }}
               >
                 {st.line}
