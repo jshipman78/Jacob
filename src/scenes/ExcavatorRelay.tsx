@@ -1,349 +1,265 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
-import '@fontsource/inter/500.css';
-import '@fontsource/inter/600.css';
-import '@fontsource/inter/700.css';
 import type { SceneProps } from './types';
-import { SAFE_AREA, PALETTE } from './types';
+import {
+  Plate, PLATE, PaperPanel, HatchField, StippleField, InkPath, PlateCaption,
+  hatch, crossHatch, stipple, contour, segment, wobblyRect, wobblyEllipse,
+  rngFor, makeFbm1D, lerp, clamp01,
+  onNs, rakingLight, ramp, stagger, settle, pulse, anticipate,
+  easeOutCubic, easeInOutCubic, easeOutQuint,
+} from './engraving';
 
 /**
- * ExcavatorRelay — the argument that finding Troy was a relay across three
- * generations, not one man's triumph: Calvert identified the site and had
- * no money; Schliemann funded and dug it, fast and destructively, and took
- * the credit; Dörpfeld brought systematic method and proposed the war-era
- * layer was higher; Blegen's thorough dig pinned Troy VIIa, c. 1180 BCE.
+ * ExcavatorRelay — four generations of excavators at Hisarlık, and the fact
+ * that the popular story keeps only the second of them.
  *
- * A time spine spans nearly the full frame width, with a bright travelling
- * point (the "baton") running along it from Calvert toward Blegen — the
- * spine finishes drawing by ~62% of the shot, so every 26–55s shot spends
- * most of its length holding the complete relay, not still assembling it.
- * Each station arrives as the baton reaches it. When `highlight` names a
- * station, that station comes forward (scale + full contrast) shortly after
- * its own arrival, while the others settle back — the emphasis ramping in
- * smoothly, never a hard cut.
+ * Cut as a row of engraved portrait medallions of the kind bound as a
+ * frontispiece: each man an oval plate, cross-hatched, with his dates and his
+ * contribution set beneath. A ruled baseline runs behind them, and the
+ * highlighted figure's medallion comes forward while the others recede into
+ * the tone of the page.
+ *
+ * The four are laid out in time order, and the baseline draws itself from
+ * Calvert forward — the point being that the line does not start with
+ * Schliemann.
  *
  * options:
  *   highlight?: 'calvert' | 'schliemann' | 'dorpfeld' | 'blegen'
  */
 
-function mulberry32(seed: number) {
-  let a = (seed >>> 0) || 1;
-  return function rand() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+const W = 1920;
+const H = 1080;
 
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
-const remap01 = (p: number, a: number, b: number) => clamp01((p - a) / Math.max(1e-6, b - a));
+const ROW_Y = 400;
+const MEDALLION_R = 116;
 
-type StationId = 'calvert' | 'schliemann' | 'dorpfeld' | 'blegen';
-
-type ExcavatorRelayOptions = {
-  highlight?: StationId;
-};
-
-type Station = {
-  id: StationId;
+type Person = {
+  key: string;
   name: string;
-  years: string;
-  line: string;
+  dates: string;
+  role: string;
+  note: string;
+  /** A crude engraved device standing for the man's method. */
+  device: 'spade' | 'sun' | 'square' | 'grid';
 };
 
-const STATIONS: Station[] = [
-  { id: 'calvert', name: 'FRANK CALVERT', years: '1865', line: 'Identified Hisarlik. No money. Written out.' },
+const PEOPLE: Person[] = [
   {
-    id: 'schliemann',
-    name: 'HEINRICH SCHLIEMANN',
-    years: '1871–73',
-    line: 'Funded the dig — fast, destructive, took the credit.',
+    key: 'calvert', name: 'FRANK CALVERT', dates: '1865',
+    role: 'Diplomat, amateur',
+    note: 'Identified the mound. Owned half of it.\nHad no money to dig it.',
+    device: 'spade',
   },
-  { id: 'dorpfeld', name: 'WILHELM DÖRPFELD', years: '1893–94', line: 'Trained architect. Brought systematic method.' },
-  { id: 'blegen', name: 'CARL BLEGEN', years: '1932–38', line: 'Thorough dig. Pinned Troy VIIa, c. 1180 BCE.' },
+  {
+    key: 'schliemann', name: 'HEINRICH SCHLIEMANN', dates: '1871–1890',
+    role: 'Retired businessman',
+    note: 'Funded and drove the dig.\nFast, destructive — and took the credit.',
+    device: 'sun',
+  },
+  {
+    key: 'dorpfeld', name: 'WILHELM DÖRPFELD', dates: '1893–1894',
+    role: 'Trained architect',
+    note: 'Brought method. Found Troy VI —\nthe city Schliemann had dug past.',
+    device: 'square',
+  },
+  {
+    key: 'blegen', name: 'CARL BLEGEN', dates: '1932–1938',
+    role: 'Archaeologist, Cincinnati',
+    note: 'Re-excavated properly. Argued for\nTroy VIIa as the war-era city.',
+    device: 'grid',
+  },
 ];
 
-// Layout: the spine spans nearly the full frame, and the whole arrangement
-// is centred in the vertical space above the subtitle band (which starts at
-// 1080 - SAFE_AREA.bottom = 820) — only that bottom strip stays deliberately
-// calm.
-const SPINE_X0 = 140;
-const SPINE_X1 = 1780;
-const STATION_X = STATIONS.map((_, i) => SPINE_X0 + ((i + 0.5) / STATIONS.length) * (SPINE_X1 - SPINE_X0));
-const PLATE_Y = 250;
-const PLATE_R = 32; // base radius; MARK_SCALE below sets the on-screen size
-const MARK_SCALE = 1.7;
-const SPINE_Y = 440;
-const STATION_BOX_W = 400; // just under the ~410px station spacing, so
-// adjacent boxes never touch
-const CONTRIBUTION_MAX_W = 330; // narrower still, so the longer one-line
-// contributions wrap onto a comfortable two lines rather than crowding the
-// neighbouring station
-
-// The spine finishes drawing at this fraction of progress, then holds — so
-// long shots spend most of their length showing the complete relay rather
-// than still assembling it.
-const SPINE_DRAW_END = 0.62;
-
-// ---------------------------------------------------------------------------
-// Abstract, restrained per-person marks — geometric devices, not attempted
-// portraits (SVG cannot render a likeness, and a bad one would misrepresent
-// a real person).
-// ---------------------------------------------------------------------------
-
-const CalvertMark: React.FC<{ color: string }> = ({ color }) => (
-  // An incomplete, dashed compass ring — identified the site, but the work
-  // (and the credit) was left unfinished.
-  <g>
-    <circle r={16} fill="none" stroke={color} strokeWidth={1.6} strokeDasharray="5 6" strokeOpacity={0.85} pathLength={100} strokeDashoffset={-8} />
-    <circle cx={0} cy={-16} r={1.8} fill={color} opacity={0.9} />
-  </g>
-);
-
-const SchliemannMark: React.FC<{ color: string }> = ({ color }) => (
-  // A bold sunburst — money, speed, dazzle, and a name that eclipsed
-  // everyone else's.
-  <g>
-    {Array.from({ length: 8 }, (_, i) => {
-      const a = (i / 8) * Math.PI * 2;
-      return (
-        <line
-          key={i}
-          x1={Math.cos(a) * 9}
-          y1={Math.sin(a) * 9}
-          x2={Math.cos(a) * 18}
-          y2={Math.sin(a) * 18}
-          stroke={color}
-          strokeWidth={1.8}
-          strokeLinecap="round"
-        />
-      );
-    })}
-    <circle r={8} fill={color} />
-  </g>
-);
-
-const DorpfeldMark: React.FC<{ color: string }> = ({ color }) => (
-  // A drafting square and a small grid — trained architect, systematic
-  // method.
-  <g>
-    <path d="M-14,14 L-14,-12 L14,14 Z" fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" />
-    {[-6, 0, 6].map((gx) =>
-      [-4, 2].map((gy) => <circle key={`${gx}-${gy}`} cx={gx} cy={gy} r={1.1} fill={color} opacity={0.8} />)
-    )}
-  </g>
-);
-
-const BlegenMark: React.FC<{ color: string; accent: string }> = ({ color, accent }) => (
-  // A small stratigraphy — stacked layers with the war-era band picked out,
-  // the layer he pinned to c. 1180 BCE.
-  <g>
-    {[18, 12, 7, 15].map((w, i) => (
-      <rect key={i} x={-w / 2} y={-16 + i * 8} width={w} height={6} fill={i === 2 ? accent : color} opacity={i === 2 ? 1 : 0.75} />
-    ))}
-  </g>
-);
-
-export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, seed, options }) => {
-  const opts = (options ?? {}) as ExcavatorRelayOptions;
-  const highlight = opts.highlight;
-  const hasHighlight = Boolean(highlight);
-
-  const seedInt = Math.floor(seed * 1e9) + 1;
-  const grain = React.useMemo(() => {
-    const rand = mulberry32(seedInt + 13);
-    return Array.from({ length: 70 }, () => ({
-      x: rand() * 1920,
-      y: 40 + rand() * 740,
-      r: 0.5 + rand() * 1,
-      o: 0.03 + rand() * 0.05,
-    }));
-  }, [seedInt]);
-
-  // The spine draws at a steady pace and finishes by SPINE_DRAW_END, then
-  // holds fully drawn — so a station's arrival progress is exactly linear
-  // in its x position, easy to invert for per-station timing below.
-  const spineT = clamp01(remap01(progress, 0, SPINE_DRAW_END));
-  const leadingX = lerp(SPINE_X0, SPINE_X1, spineT);
-
-  const idleT = frame / fps;
-  // A gentle, continuous breathing scale on the parked baton once the spine
-  // has finished drawing, so the frame is never fully still even at rest.
-  const batonIdlePulse = Math.sin(idleT * ((Math.PI * 2) / 3.4)) * 0.5 + 0.5;
-
-  return (
-    <AbsoluteFill style={{ backgroundColor: PALETTE.ink, overflow: 'hidden' }}>
-      <AbsoluteFill
-        style={{
-          background: `radial-gradient(ellipse 1500px 800px at 50% 40%, ${PALETTE.soilWarm}28 0%, transparent 70%)`,
-        }}
-      />
-
-      {/* Static grain across the working area */}
-      <svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{ position: 'absolute', inset: 0 }}>
-        {grain.map((g, i) => (
-          <circle key={i} cx={g.x} cy={g.y} r={g.r} fill={PALETTE.bone} opacity={g.o} />
-        ))}
-
-        {/* Spine track (full extent, very faint, for context) */}
-        <line x1={SPINE_X0} y1={SPINE_Y} x2={SPINE_X1} y2={SPINE_Y} stroke={PALETTE.ash} strokeWidth={1} strokeOpacity={0.2} />
-
-        {/* Spine draw-on */}
-        <line x1={SPINE_X0} y1={SPINE_Y} x2={leadingX} y2={SPINE_Y} stroke={PALETTE.bronze} strokeWidth={2} strokeOpacity={0.78} />
-
-        {/* Travelling baton with a short fading trail */}
-        {[0, 26, 52, 80].map((back, i) => {
-          const bx = Math.max(SPINE_X0, leadingX - back);
-          const o = (1 - i * 0.26) * (i === 0 ? 1 : 0.5);
-          return <circle key={i} cx={bx} cy={SPINE_Y} r={i === 0 ? 6 : 3.4 - i * 0.4} fill={PALETTE.goldBright} opacity={o} />;
-        })}
-        <circle cx={leadingX} cy={SPINE_Y} r={13 + batonIdlePulse * 2.5} fill="none" stroke={PALETTE.goldBright} strokeWidth={1} opacity={0.32} />
-
-        {STATIONS.map((st, i) => {
-          const x = STATION_X[i];
-          // The exact progress at which the linear baton reaches this
-          // station's x — inverted analytically, so timing and the visual
-          // baton position always agree exactly.
-          const arrivalProgress = (SPINE_DRAW_END * (x - SPINE_X0)) / (SPINE_X1 - SPINE_X0);
-          const arrive = easeOutCubic(remap01(progress, arrivalProgress - 0.04, arrivalProgress + 0.05));
-          const emphasis = hasHighlight
-            ? easeOutCubic(remap01(progress, arrivalProgress + 0.04, arrivalProgress + 0.2))
-            : 0;
-          const isHi = st.id === highlight;
-          const dim = hasHighlight && !isHi;
-
-          const scale = MARK_SCALE * (hasHighlight ? lerp(1, isHi ? 1.14 : 0.86, emphasis) : 1);
-          const fadeMul = hasHighlight ? lerp(1, isHi ? 1 : 0.4, emphasis) : 1;
-          const opacity = arrive * fadeMul;
-
-          const bob = Math.sin(idleT * ((Math.PI * 2) / 5) + i * 1.7) * (isHi ? 3.2 : 1.6);
-          const glowPulse = isHi ? 0.5 + 0.5 * Math.sin(idleT * ((Math.PI * 2) / 4.2)) : 0;
-
-          const markColor = isHi ? PALETTE.goldBright : dim ? PALETTE.ash : PALETTE.gold;
-
-          return (
-            <g key={st.id} opacity={opacity} transform={`translate(${x},0)`}>
-              {/* Stem connecting plate to spine */}
-              <line
-                x1={0}
-                y1={PLATE_Y + PLATE_R * MARK_SCALE}
-                x2={0}
-                y2={SPINE_Y}
-                stroke={PALETTE.ash}
-                strokeWidth={1}
-                strokeOpacity={0.3 * arrive}
-              />
-
-              {/* Node on the spine */}
-              <circle
-                cx={0}
-                cy={SPINE_Y}
-                r={isHi ? 6.5 : 4.5}
-                fill={isHi ? PALETTE.goldBright : dim ? PALETTE.soilWarm : PALETTE.gold}
-                stroke={PALETTE.ink}
-                strokeWidth={1}
-              />
-
-              {/* Plate */}
-              <g transform={`translate(0,${PLATE_Y + bob}) scale(${scale})`}>
-                {isHi && (
-                  <circle r={PLATE_R + 11} fill="none" stroke={PALETTE.goldBright} strokeWidth={1} opacity={0.28 * arrive + 0.14 * glowPulse} />
-                )}
-                <circle r={PLATE_R} fill={PALETTE.soil} stroke={markColor} strokeOpacity={0.6} strokeWidth={1} />
-                {st.id === 'calvert' && <CalvertMark color={markColor} />}
-                {st.id === 'schliemann' && <SchliemannMark color={markColor} />}
-                {st.id === 'dorpfeld' && <DorpfeldMark color={markColor} />}
-                {st.id === 'blegen' && <BlegenMark color={markColor} accent={isHi ? PALETTE.goldBright : PALETTE.ember} />}
-              </g>
-            </g>
-          );
-        })}
-
-        {/* Contrast relief across the subtitle safe band only — the title
-            band is not a keep-out zone (the title card draws its own scrim
-            for the few seconds it's on screen). */}
-        <rect x={0} y={1080 - SAFE_AREA.bottom} width={1920} height={SAFE_AREA.bottom} fill={PALETTE.ink} opacity={0.5} />
-      </svg>
-
-      {/* Text labels — HTML for crisp Inter type */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        {STATIONS.map((st, i) => {
-          const x = STATION_X[i];
-          const arrivalProgress = (SPINE_DRAW_END * (x - SPINE_X0)) / (SPINE_X1 - SPINE_X0);
-          const arrive = easeOutCubic(remap01(progress, arrivalProgress - 0.04, arrivalProgress + 0.05));
-          const emphasis = hasHighlight
-            ? easeOutCubic(remap01(progress, arrivalProgress + 0.04, arrivalProgress + 0.2))
-            : 0;
-          const isHi = st.id === highlight;
-          const dim = hasHighlight && !isHi;
-          const fadeMul = hasHighlight ? lerp(1, isHi ? 1 : 0.4, emphasis) : 1;
-          const opacity = arrive * fadeMul;
-          const drift = (1 - arrive) * 12;
-
-          return (
-            <div
-              key={st.id}
-              style={{
-                position: 'absolute',
-                left: x - STATION_BOX_W / 2,
-                top: SPINE_Y + 34,
-                width: STATION_BOX_W,
-                textAlign: 'center',
-                opacity,
-                transform: `translateY(${drift}px)`,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 500,
-                  fontSize: 16,
-                  letterSpacing: 2,
-                  color: isHi ? PALETTE.gold : PALETTE.ash,
-                }}
-              >
-                {st.years}
-              </div>
-              <div
-                style={{
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: isHi ? 700 : 600,
-                  fontSize: isHi ? 34 : 29,
-                  letterSpacing: 1,
-                  color: isHi ? PALETTE.goldBright : dim ? PALETTE.ash : PALETTE.bone,
-                  marginTop: 8,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {st.name}
-              </div>
-              <div
-                style={{
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 400,
-                  fontSize: 18,
-                  lineHeight: 1.4,
-                  letterSpacing: 0.2,
-                  color: isHi ? PALETTE.bone : PALETTE.ash,
-                  marginTop: 12,
-                  opacity: isHi ? 0.95 : 0.7,
-                  maxWidth: CONTRIBUTION_MAX_W,
-                  marginLeft: 'auto',
-                  marginRight: 'auto',
-                }}
-              >
-                {st.line}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </AbsoluteFill>
-  );
+const DEVICES: Record<Person['device'], string> = {
+  spade: 'M0,-34 L0,20 M-14,20 L14,20 L10,40 L-10,40 Z M-9,-34 L9,-34',
+  sun: 'M0,-30 L0,-46 M0,30 L0,46 M-30,0 L-46,0 M30,0 L46,0 M-21,-21 L-33,-33 M21,21 L33,33 M21,-21 L33,-33 M-21,21 L-33,33',
+  square: 'M-34,-30 L34,32 L-34,32 Z M-24,20 L-24,26 M-12,20 L-12,26 M0,20 L0,26',
+  grid: 'M-32,-32 L32,-32 M-32,-10 L32,-10 M-32,12 L32,12 M-32,34 L32,34 M-32,-32 L-32,34 M-10,-32 L-10,34 M12,-32 L12,34 M34,-32 L34,34',
 };
 
-export default ExcavatorRelay;
+type Options = { highlight?: string };
+
+export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, seed, options }) => {
+  const opts = (options ?? {}) as Options;
+  const highlight = opts.highlight;
+  const hotIndex = PEOPLE.findIndex((p) => p.key === highlight);
+
+  const geo = useMemo(() => {
+    const fbm = makeFbm1D(seed, 'relay');
+
+    const slots = PEOPLE.map((_, i) => 262 + i * 466);
+
+    const medallions = PEOPLE.map((person, i) => {
+      const cx = slots[i];
+      const ring = wobblyEllipse(seed, `ring${i}`, cx, ROW_Y, MEDALLION_R, MEDALLION_R, 1.2, 52);
+      const ringIn = wobblyEllipse(seed, `ring2-${i}`, cx, ROW_Y, MEDALLION_R - 13, MEDALLION_R - 13, 0.9, 46);
+      // The medallion's ground: cross-hatched, lit from upper-left, so it
+      // reads as a struck plate rather than a circle.
+      const tone = crossHatch(seed, `med${i}`, {
+        x: cx - MEDALLION_R, y: ROW_Y - MEDALLION_R, w: MEDALLION_R * 2, h: MEDALLION_R * 2,
+        angle: 34, pitch: 9, amp: 1.0, coverage: 0.8, jitter: 0.5, width: 0.9, samples: 6,
+        crossAngle: 96, crossPitch: 13,
+        density: (u, v) => {
+          // Radial falloff plus a directional key.
+          const dx = u - 0.5;
+          const dy = v - 0.5;
+          const r = Math.hypot(dx, dy) * 2;
+          const key = clamp01(1 - (dx * 0.8 + dy * 1.0 + 0.5));
+          return clamp01((1 - Math.pow(r, 2.4)) * (0.25 + key * 0.95));
+        },
+      });
+      const grain = stipple(seed, `medg${i}`, {
+        x: cx - MEDALLION_R, y: ROW_Y - MEDALLION_R, w: MEDALLION_R * 2, h: MEDALLION_R * 2,
+        count: 300, minR: 0.5, maxR: 1.9,
+        density: (u, v) => clamp01(1 - Math.hypot(u - 0.5, v - 0.5) * 2.1),
+      });
+      return { person, cx, ring, ringIn, tone, grain, index: i };
+    });
+
+    // The baseline the four sit on — a ruled chronological thread.
+    const basePts: { x: number; y: number }[] = [];
+    for (let k = 0; k <= 50; k++) {
+      const u = k / 50;
+      basePts.push({ x: 80 + u * (W - 160), y: ROW_Y + MEDALLION_R + 56 + fbm(u * 4) * 3 });
+    }
+    const baseline = contour(seed, 'base', basePts, 1.2, 300);
+
+    const pageTone = hatch(seed, 'page', {
+      x: -40, y: 120, w: W + 80, h: 700,
+      angle: 8, pitch: 34, amp: 2.4, coverage: 0.4, jitter: 1.3, width: 0.8, samples: 6,
+      density: (u, v) => clamp01(0.5 - Math.abs(v - 0.5) * 0.7) * clamp01(0.4 + fbm(u * 5) * 0.8),
+    });
+
+    return { medallions, baseline, pageTone, slots };
+  }, [seed]);
+
+  const p = clamp01(progress);
+
+  const tPage = ramp(p, 0.0, 0.2);
+  const tBase = ramp(p, 0.06, 0.44);
+  // The four arrive in time order, each landing with a settle.
+  const arrive = (i: number) => stagger(ramp(p, 0.10, 0.62), i, 4, 0.14, 0.28);
+
+  // The highlight comes in AFTER all four are on the page, so the viewer sees
+  // the whole relay before being told which link the story remembers.
+  const tHot = ramp(p, 0.56, 0.70);
+
+  // Camera: holds wide while the four land, then eases across to the
+  // highlighted man and holds there. Two moves, two holds — not a drift.
+  const slide = easeInOutCubic(ramp(p, 0.60, 0.82));
+  const targetX = hotIndex >= 0 ? geo.slots[hotIndex] : W / 2;
+  const camScale = 1.0 + slide * (hotIndex >= 0 ? 0.30 : 0.06);
+  const camX = (W / 2 - targetX) * (camScale - 1) / camScale;
+  const camY = slide * (hotIndex >= 0 ? 26 : 0);
+
+  const sweep = rakingLight(frame, fps, 31, seed);
+  const litness = (u: number) => 1 + 0.5 * Math.exp(-Math.pow((u - lerp(-0.2, 1.2, sweep)) / 0.24, 2));
+
+  return (
+    <Plate seed={seed} frame={frame} fps={fps} tone="warm" lightPeriodSec={31} lightStrength={0.85}>
+      <AbsoluteFill
+        style={{
+          transform: `scale(${camScale.toFixed(4)}) translate(${camX.toFixed(2)}px, ${camY.toFixed(2)}px)`,
+          transformOrigin: '50% 42%',
+        }}
+      >
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+          <HatchField strokes={geo.pageTone} t={tPage} color={PLATE.cut} alpha={0.18} passes={4} />
+          <InkPath d={geo.baseline.d} len={geo.baseline.len} t={tBase} color={PLATE.cutDim} width={1.2} opacity={0.5} />
+
+          {geo.medallions.map((m) => {
+            const a = arrive(m.index);
+            if (a <= 0.01) return null;
+            const isHot = m.index === hotIndex;
+            const recede = hotIndex >= 0 ? lerp(1, isHot ? 1 : 0.3, tHot) : 1;
+            const lift = isHot ? settle(tHot, 0.16) : 0;
+            const s = settle(a, 0.14) * (1 + lift * 0.09);
+            const col = isHot ? PLATE.goldBright : PLATE.cut;
+
+            return (
+              <g key={m.index} opacity={recede}>
+                <g transform={`translate(${m.cx}, ${ROW_Y}) scale(${s.toFixed(4)}) translate(${-m.cx}, ${-ROW_Y})`}>
+                  <defs>
+                    <clipPath id={`med-${Math.round(seed * 1e6)}-${m.index}`}>
+                      <circle cx={m.cx} cy={ROW_Y} r={MEDALLION_R - 14} />
+                    </clipPath>
+                  </defs>
+                  <g clipPath={`url(#med-${Math.round(seed * 1e6)}-${m.index})`}>
+                    <HatchField strokes={m.tone.first} t={a} color={col} alpha={0.5} passes={5} modulate={(st) => litness(st.k)} />
+                    <HatchField strokes={m.tone.second} t={clamp01((a - 0.3) / 0.7)} color={col} alpha={0.34} passes={4} />
+                    <StippleField dots={m.grain} t={a} color={col} alpha={0.4} />
+                  </g>
+                  {/* The device: draws itself, then holds. */}
+                  <g transform={`translate(${m.cx}, ${ROW_Y})`} opacity={clamp01((a - 0.25) / 0.5)}>
+                    <path d={DEVICES[m.person.device]} fill="none" stroke={col} strokeWidth={2.4} strokeLinecap="round" opacity={0.9} />
+                  </g>
+                  <InkPath d={m.ring.d} len={m.ring.len} t={a} color={col} width={2.4} opacity={0.9} />
+                  <InkPath d={m.ringIn.d} len={m.ringIn.len} t={clamp01((a - 0.2) / 0.8)} color={col} width={1.0} opacity={0.5} />
+                </g>
+
+                {/* Tick down to the baseline, then the caption below it. */}
+                <line
+                  x1={m.cx} y1={ROW_Y + MEDALLION_R + 4}
+                  x2={m.cx} y2={ROW_Y + MEDALLION_R + 52}
+                  stroke={col} strokeWidth={1.2} opacity={0.55 * clamp01((a - 0.4) / 0.4)}
+                />
+                <circle cx={m.cx} cy={ROW_Y + MEDALLION_R + 56} r={isHot ? 6 : 4} fill={col} opacity={0.9 * clamp01((a - 0.5) / 0.4)} />
+
+                <g opacity={clamp01((a - 0.5) / 0.5)} transform={`translate(0, ${((1 - clamp01((a - 0.5) / 0.5)) * 9).toFixed(2)})`}>
+                  <text
+                    x={m.cx} y={ROW_Y + MEDALLION_R + 100}
+                    textAnchor="middle" fill={PLATE.gold}
+                    style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 19, letterSpacing: 2.6 }}
+                  >
+                    {m.person.dates}
+                  </text>
+                  <text
+                    x={m.cx} y={ROW_Y + MEDALLION_R + 138}
+                    textAnchor="middle" fill={col}
+                    style={{ fontFamily: "'Cinzel', serif", fontWeight: 700, fontSize: isHot ? 30 : 26, letterSpacing: 2 }}
+                  >
+                    {m.person.name}
+                  </text>
+                  <text
+                    x={m.cx} y={ROW_Y + MEDALLION_R + 166}
+                    textAnchor="middle" fill={PLATE.cutDim}
+                    style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: 17, letterSpacing: 1.2 }}
+                  >
+                    {m.person.role}
+                  </text>
+                  {m.person.note.split('\n').map((line, li) => (
+                    <text
+                      key={li}
+                      x={m.cx} y={ROW_Y + MEDALLION_R + 198 + li * 24}
+                      textAnchor="middle" fill={isHot ? PLATE.cut : PLATE.cutFaint}
+                      style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: 17, letterSpacing: 0.6 }}
+                    >
+                      {line}
+                    </text>
+                  ))}
+                </g>
+
+                {isHot ? (
+                  <circle
+                    cx={m.cx} cy={ROW_Y}
+                    r={MEDALLION_R + 14 + pulse(p, 0.60, 0.05) * 60}
+                    fill="none" stroke={PLATE.goldBright} strokeWidth={1.8}
+                    opacity={pulse(p, 0.60, 0.05) * 0.7}
+                  />
+                ) : null}
+              </g>
+            );
+          })}
+        </svg>
+      </AbsoluteFill>
+
+      <PlateCaption
+        x={96}
+        y={104}
+        title="Four generations at Hisarlık"
+        sub="The story keeps only the second"
+        t={ramp(p, 0.02, 0.2)}
+      />
+    </Plate>
+  );
+};

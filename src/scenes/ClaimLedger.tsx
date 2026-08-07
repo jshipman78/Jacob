@@ -1,288 +1,240 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
-import '@fontsource/inter/500.css';
-import '@fontsource/inter/600.css';
-import '@fontsource/cinzel/600.css';
 import type { SceneProps } from './types';
-import { SAFE_AREA, PALETTE } from './types';
+import {
+  Plate, PLATE, PaperPanel, HatchField, StippleField, InkPath, PlateCaption,
+  hatch, stipple, contour, segment, wobblyRect,
+  rngFor, makeFbm1D, lerp, clamp01,
+  onNs, rakingLight, ramp, stagger, settle, pulse, anticipate,
+  easeOutCubic, easeInOutCubic, easeOutQuint,
+} from './engraving';
 
 /**
- * ClaimLedger — the spine of the whole film: Schliemann's stories don't
- * survive scrutiny. A two-column ledger, CLAIMED against THE RECORD, with
- * each row arriving in its own choreographed beat: the claim writes on and
- * holds, then the record lands a beat later while a strike-through DRAWS
- * across the claim (not a hard cut). Rows stagger so the rhythm can sit
- * under narration; a faint, continuously drifting paper-grain layer keeps
- * the frame from ever feeling frozen between rows.
+ * ClaimLedger — what Schliemann said, set against what the record shows.
+ *
+ * Cut in the film's second register: instead of white lines on the dark block,
+ * this is a PRINTED SHEET tipped into the page — cream laid paper, dark ink,
+ * ruled columns, the double-entry look of a ledger. That contrast is doing
+ * real work: the rest of the film is the world as engraved illustration, and
+ * this is the paper trail, the documentary evidence, a different kind of
+ * object entirely.
+ *
+ * Every row is a claim and its correction. The claim is written first in a
+ * confident hand; the record arrives after it, in a second colour, and then a
+ * rule is struck through the claim. The strike-through is the whole gag, and
+ * it lands with a snap rather than a fade.
  *
  * options:
- *   rows?: { claimed: string; record: string }[] — defaults to three
- *     claims from the script: the childhood vow, Sophia at the discovery,
- *     and the gold belonging to Priam.
+ *   rows?: { claimed: string; record: string }[]
  */
 
-function mulberry32(seed: number) {
-  let a = (seed >>> 0) || 1;
-  return function rand() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+const W = 1920;
+const H = 1080;
 
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
-const remap01 = (p: number, a: number, b: number) => clamp01((p - a) / Math.max(1e-6, b - a));
+const SHEET = { x: 150, y: 118, w: 1620, h: 618 };
 
-type LedgerRow = { claimed: string; record: string };
-
-type ClaimLedgerOptions = {
-  rows?: LedgerRow[];
-};
-
-const DEFAULT_ROWS: LedgerRow[] = [
-  { claimed: 'Vowed as a boy to dig up Troy', record: 'The story appears only in his own retelling' },
-  { claimed: 'Sophia at his side when the gold was found', record: "Her own family: she was away in Greece" },
-  { claimed: 'The gold belonged to King Priam', record: 'The layer predates the war by ~1,200 years' },
+const DEFAULT_ROWS = [
+  { claimed: 'Read Homer as a boy and vowed to find Troy', record: 'The vow appears only in his own later memoirs' },
+  { claimed: 'Found the site by following the Iliad', record: 'Frank Calvert identified the mound, and told him' },
+  { claimed: 'Sophia was at his side when the gold appeared', record: 'She was in Athens that day' },
+  { claimed: 'Carried the treasure out in his wife’s shawl', record: 'Written in afterwards, for the telling' },
+  { claimed: '“Priam’s Treasure” — the gold of Homer’s king', record: 'Troy II gold, older than any Trojan War by ~1,300 years' },
 ];
 
-// Ledger occupies the SAFE_AREA "top pocket" only — small type, low
-// contrast, plenty of air, entirely clear of the title band and subtitles.
-const LEDGER_TOP = SAFE_AREA.edge + 30; // 150
-const LEDGER_BOTTOM = SAFE_AREA.titleBandTop - 14; // 366
-const LEDGER_LEFT = SAFE_AREA.edge;
-const LEDGER_RIGHT = 1920 - SAFE_AREA.edge;
-const GUTTER_X = (LEDGER_LEFT + LEDGER_RIGHT) / 2;
+type Options = { rows?: { claimed: string; record: string }[] };
 
 export const ClaimLedger: React.FC<SceneProps> = ({ progress, frame, fps, seed, options }) => {
-  const opts = (options ?? {}) as ClaimLedgerOptions;
-  const rows = opts.rows && opts.rows.length > 0 ? opts.rows : DEFAULT_ROWS;
+  const opts = (options ?? {}) as Options;
+  const rows = opts.rows ?? DEFAULT_ROWS;
 
-  const seedInt = Math.floor(seed * 1e9) + 1;
+  const geo = useMemo(() => {
+    const rand = rngFor(seed, 'ledger');
+    const fbm = makeFbm1D(seed, 'ledgerf');
 
-  // Static paper speckle, each with its own slow, independent twinkle
-  // phase/speed — the aggregate reads as organic film-grain flicker rather
-  // than one discrete repeating event, and it never runs out of new-looking
-  // motion even across a very long hold. Positions are fixed (seeded once);
-  // only opacity and a whole-layer drift move per frame.
-  const grain = useMemo(() => {
-    const rand = mulberry32(seedInt + 29);
-    return Array.from({ length: 90 }, () => ({
-      x: rand() * 1920,
-      y: rand() * 1080,
-      r: 0.5 + rand() * 1,
-      o: 0.02 + rand() * 0.045,
-      phase: rand() * Math.PI * 2,
-      speed: 0.25 + rand() * 0.4,
-    }));
-  }, [seedInt]);
-  const driftT = frame / fps;
-  const grainDriftX = Math.sin(driftT * ((Math.PI * 2) / 6.5)) * 5;
-  const grainDriftY = Math.cos(driftT * ((Math.PI * 2) / 8)) * 3.5;
+    // Ruled lines on the sheet, in the sheet's own coordinates.
+    const rowH = (SHEET.h - 150) / rows.length;
+    const rules = rows.map((_, i) =>
+      contour(seed, `rule${i}`,
+        segment({ x: 46, y: 150 + (i + 1) * rowH }, { x: SHEET.w - 46, y: 150 + (i + 1) * rowH + fbm(i * 3) * 2 }, 16),
+        0.9, 220)
+    );
+    const divider = contour(seed, 'div',
+      segment({ x: SHEET.w * 0.5, y: 92 }, { x: SHEET.w * 0.5 + 3, y: SHEET.h - 34 }, 12), 1.0, 200);
+    const header = contour(seed, 'hdr',
+      segment({ x: 46, y: 138 }, { x: SHEET.w - 46, y: 139 }, 16), 1.0, 240);
 
-  const n = rows.length;
-  const headerFade = easeOutCubic(remap01(progress, 0, 0.12));
+    // Foxing — age spots on the sheet. Static, and part of why it reads as an
+    // object rather than a UI panel.
+    const foxing = stipple(seed, 'fox', {
+      x: 0, y: 0, w: SHEET.w, h: SHEET.h, count: 260, minR: 1.2, maxR: 7,
+      density: (u, v) => clamp01(Math.pow(Math.max(Math.abs(u - 0.5), Math.abs(v - 0.5)) * 2, 2.2)),
+    });
 
-  // Available height budget, degrading row height gracefully as more rows
-  // are supplied so this stays robust to whatever the registry passes in.
-  const headerH = 34;
-  const availH = LEDGER_BOTTOM - LEDGER_TOP - headerH;
-  const rowH = Math.min(58, availH / Math.max(1, n));
-  const fontScale = clamp01((rowH - 30) / 28) * 0.25 + 0.85; // 0.85–1.1
+    // The dark block behind the sheet still gets worked, so the sheet sits ON
+    // something rather than floating.
+    const ground = hatch(seed, 'lground', {
+      x: -40, y: 60, w: W + 80, h: 960,
+      angle: 62, pitch: 26, amp: 2.0, coverage: 0.45, jitter: 1.2, width: 0.9, samples: 6,
+      density: (u, v) => clamp01(0.45 + fbm(u * 4 + v * 2) * 0.8) * clamp01(1.2 - v * 1.1),
+    });
 
-  // Row choreography is staggered across the first ~78% of progress,
-  // leaving a settled tail. Each row: claim writes on -> holds a beat ->
-  // record lands while the strike-through draws across the claim.
-  const revealSpan = 0.78;
-  const perRow = n > 0 ? revealSpan / n : revealSpan;
-  const overlap = perRow * 0.5; // rows begin arriving before the previous fully settles
+    return { rules, divider, header, foxing, ground, rowH };
+  }, [seed, rows]);
+
+  const p = clamp01(progress);
+
+  const tGround = ramp(p, 0.0, 0.18);
+  // The sheet is laid down first, with a small settle.
+  const tSheet = ramp(p, 0.04, 0.22);
+  const sheetIn = settle(tSheet, 0.05);
+  const tRules = ramp(p, 0.14, 0.36);
+
+  // Each row: the claim is written, then the record answers it, then the
+  // claim is struck through. Three beats per row, staggered down the page.
+  const rowT = (i: number) => stagger(ramp(p, 0.20, 0.94), i, rows.length, 0.135, 0.30);
+
+  const sweep = rakingLight(frame, fps, 33, seed);
+
+  // Camera: the sheet is examined. A small push, a hold, then a drift down
+  // the page as the later rows fill in.
+  const push = easeOutCubic(ramp(p, 0.04, 0.26));
+  const drift = easeInOutCubic(ramp(p, 0.45, 1.0));
+  const camScale = 1.0 + push * 0.045 + drift * 0.035;
+  const camY = -drift * 30;
+
+  const colL = 46;
+  const colR = SHEET.w * 0.5 + 34;
+  const colW = SHEET.w * 0.5 - 92;
 
   return (
-    <AbsoluteFill style={{ backgroundColor: PALETTE.ink, overflow: 'hidden' }}>
-      <AbsoluteFill
-        style={{
-          background: `radial-gradient(ellipse 1200px 500px at 50% 8%, ${PALETTE.soilWarm}28 0%, transparent 72%)`,
-        }}
-      />
-
-      {/* Paper grain — fixed positions, slow whole-layer drift plus a
-          per-dot twinkle so the texture is always quietly alive. */}
-      <svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{ position: 'absolute', inset: 0 }}>
-        <g transform={`translate(${grainDriftX},${grainDriftY})`}>
-          {grain.map((g, i) => (
-            <circle
-              key={i}
-              cx={g.x}
-              cy={g.y}
-              r={g.r}
-              fill={PALETTE.bone}
-              opacity={g.o * (0.55 + 0.45 * Math.sin(driftT * g.speed + g.phase))}
-            />
-          ))}
-        </g>
+    <Plate seed={seed} frame={frame} fps={fps} tone="neutral" lightPeriodSec={33} lightStrength={0.7}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+        <HatchField strokes={geo.ground} t={tGround} color={PLATE.cut} alpha={0.2} passes={5} />
       </svg>
 
-      <div
+      <AbsoluteFill
         style={{
-          position: 'absolute',
-          left: LEDGER_LEFT,
-          top: LEDGER_TOP,
-          width: LEDGER_RIGHT - LEDGER_LEFT,
+          transform: `scale(${camScale.toFixed(4)}) translateY(${camY.toFixed(2)}px)`,
+          transformOrigin: '50% 40%',
         }}
       >
-        {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            opacity: 0.6 * headerFade,
-            transform: `translateY(${(1 - headerFade) * 8}px)`,
-          }}
-        >
-          <div style={headerStyle(false)}>CLAIMED</div>
-          <div style={headerStyle(true)}>THE RECORD</div>
-        </div>
-        <div
-          style={{
-            height: 1,
-            marginTop: 8,
-            background: `linear-gradient(90deg, transparent, ${PALETTE.ash}, transparent)`,
-            opacity: 0.4 * headerFade,
-            transform: `scaleX(${0.3 + 0.7 * headerFade})`,
-          }}
-        />
+        <PaperPanel x={SHEET.x} y={SHEET.y} w={SHEET.w} h={SHEET.h} seed={seed} reveal={sheetIn}>
+          <svg width={SHEET.w} height={SHEET.h} viewBox={`0 0 ${SHEET.w} ${SHEET.h}`} style={{ position: 'absolute' }}>
+            {/* Age. */}
+            <StippleField dots={geo.foxing} t={1} color="#8a6a3a" alpha={0.18} />
 
-        {rows.map((row, i) => {
-          const start = i * (perRow - overlap * 0.35);
-          // Claim phase: writes on, then holds a beat.
-          const claimIn = easeOutCubic(remap01(progress, start, start + perRow * 0.32));
-          // Beat, then the record lands while the strike-through draws.
-          const recordStart = start + perRow * 0.5;
-          const recordIn = easeOutCubic(remap01(progress, recordStart, recordStart + perRow * 0.4));
-          const strikeStart = start + perRow * 0.58;
-          const strikeT = easeOutCubic(remap01(progress, strikeStart, strikeStart + perRow * 0.32));
-
-          const rowTop = headerH + i * rowH;
-
-          return (
-            <div key={i} style={{ position: 'absolute', left: 0, top: rowTop, width: '100%', height: rowH }}>
-              {/* Row divider */}
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 1,
-                  background: PALETTE.ash,
-                  opacity: 0.12 * claimIn,
-                }}
+            {/* Ruling. */}
+            <InkPath d={geo.header.d} len={geo.header.len} t={tRules} color={PLATE.paperInk} width={1.6} opacity={0.7} />
+            <InkPath d={geo.divider.d} len={geo.divider.len} t={tRules} color={PLATE.paperInk} width={1.2} opacity={0.45} />
+            {geo.rules.map((r, i) => (
+              <InkPath
+                key={i}
+                d={r.d} len={r.len}
+                t={stagger(tRules, i, geo.rules.length, 0.09, 0.5)}
+                color={PLATE.paperInk} width={0.9} opacity={0.28}
               />
-              {/* Centre gutter connector */}
-              <div
-                style={{
-                  position: 'absolute',
-                  left: GUTTER_X - LEDGER_LEFT - 10,
-                  top: rowH / 2 - 6,
-                  width: 20,
-                  textAlign: 'center',
-                  fontFamily: 'Inter, sans-serif',
-                  fontSize: 11 * fontScale,
-                  color: PALETTE.bronze,
-                  opacity: 0.5 * recordIn,
-                }}
-              >
-                →
-              </div>
+            ))}
 
-              {/* Claimed cell */}
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: 0,
-                  width: GUTTER_X - LEDGER_LEFT - 26,
-                  height: rowH,
-                  display: 'flex',
-                  alignItems: 'center',
-                  opacity: claimIn,
-                  transform: `translateY(${(1 - claimIn) * 8}px)`,
-                }}
-              >
-                <span
-                  style={{
-                    position: 'relative',
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 500,
-                    fontSize: 15 * fontScale,
-                    letterSpacing: 0.1,
-                    color: PALETTE.bone,
-                    opacity: 0.8,
-                  }}
-                >
-                  {row.claimed}
-                  {/* Strike-through that DRAWS across the claim, left to right */}
-                  <span
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      top: '52%',
-                      height: 1,
-                      width: `${strikeT * 100}%`,
-                      background: PALETTE.ember,
-                      opacity: 0.85,
-                    }}
-                  />
-                </span>
-              </div>
+            {/* Column heads. */}
+            <text x={colL} y={104} fill={PLATE.paperInk} opacity={0.85 * clamp01(tRules * 2)}
+              style={{ fontFamily: "'Cinzel', serif", fontWeight: 700, fontSize: 27, letterSpacing: 4 }}>
+              WHAT HE SAID
+            </text>
+            <text x={colR} y={104} fill="#6d2f14" opacity={0.85 * clamp01(tRules * 2)}
+              style={{ fontFamily: "'Cinzel', serif", fontWeight: 700, fontSize: 27, letterSpacing: 4 }}>
+              WHAT THE RECORD SHOWS
+            </text>
 
-              {/* Record cell */}
-              <div
-                style={{
-                  position: 'absolute',
-                  left: GUTTER_X - LEDGER_LEFT + 14,
-                  top: 0,
-                  width: LEDGER_RIGHT - GUTTER_X - 14,
-                  height: rowH,
-                  display: 'flex',
-                  alignItems: 'center',
-                  opacity: recordIn,
-                  transform: `translateY(${(1 - recordIn) * 8}px)`,
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 500,
-                    fontSize: 14 * fontScale,
-                    letterSpacing: 0.1,
-                    color: PALETTE.goldBright,
-                    opacity: 0.92,
-                  }}
-                >
-                  {row.record}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </AbsoluteFill>
+            {rows.map((row, i) => {
+              const t = rowT(i);
+              if (t <= 0.01) return null;
+              // Three beats within the row.
+              const tClaim = clamp01(t / 0.36);
+              const tRecord = clamp01((t - 0.40) / 0.34);
+              const tStrike = clamp01((t - 0.76) / 0.16);
+              const y = 150 + i * geo.rowH + geo.rowH * 0.62;
+
+              // The strike-through is drawn as a real ruled line, and it lands
+              // fast: an engraver striking out a line does not fade it.
+              const strikeW = colW * easeOutQuint(tStrike);
+
+              return (
+                <g key={i}>
+                  <g opacity={tClaim} transform={`translate(${((1 - tClaim) * -12).toFixed(2)}, 0)`}>
+                    <Wrapped
+                      x={colL} y={y} width={colW} text={row.claimed}
+                      fill={PLATE.paperInk} size={25} weight={600} opacity={tStrike > 0.5 ? 0.42 : 0.95}
+                    />
+                  </g>
+                  {tStrike > 0.01 ? (
+                    <line
+                      x1={colL} y1={y - 8} x2={colL + strikeW} y2={y - 6}
+                      stroke="#7a2f12" strokeWidth={2.6} opacity={0.9}
+                    />
+                  ) : null}
+                  <g opacity={tRecord} transform={`translate(${((1 - tRecord) * 12).toFixed(2)}, 0)`}>
+                    <Wrapped
+                      x={colR} y={y} width={colW} text={row.record}
+                      fill="#6d2f14" size={25} weight={600} opacity={0.95}
+                    />
+                  </g>
+                </g>
+              );
+            })}
+          </svg>
+        </PaperPanel>
+      </AbsoluteFill>
+
+      {/* A raking gleam travelling across the sheet — light on paper. */}
+      <AbsoluteFill
+        style={{
+          background: `linear-gradient(104deg, rgba(255,240,210,0) ${(sweep * 120 - 30).toFixed(1)}%, rgba(255,240,210,0.10) ${(sweep * 120 - 12).toFixed(1)}%, rgba(255,240,210,0) ${(sweep * 120 + 8).toFixed(1)}%)`,
+          mixBlendMode: 'screen',
+          pointerEvents: 'none',
+        }}
+      />
+    </Plate>
   );
 };
 
-function headerStyle(gold: boolean): React.CSSProperties {
-  return {
-    fontFamily: '"Cinzel", serif',
-    fontWeight: 600,
-    fontSize: 15,
-    letterSpacing: 3,
-    color: gold ? PALETTE.gold : PALETTE.ash,
-    textTransform: 'uppercase',
-  };
-}
+/**
+ * Naive word-wrapper for SVG text. SVG has no flow layout, and these strings
+ * are known and short, so an estimate from the average glyph width is both
+ * sufficient and deterministic.
+ */
+const Wrapped: React.FC<{
+  x: number; y: number; width: number; text: string;
+  fill: string; size: number; weight: number; opacity?: number;
+}> = ({ x, y, width, text, fill, size, weight, opacity = 1 }) => {
+  const lines = useMemo(() => {
+    const perChar = size * 0.5;
+    const maxChars = Math.max(8, Math.floor(width / perChar));
+    const words = text.split(' ');
+    const out: string[] = [];
+    let line = '';
+    for (const w of words) {
+      if (line.length === 0) line = w;
+      else if ((line + ' ' + w).length <= maxChars) line += ' ' + w;
+      else { out.push(line); line = w; }
+    }
+    if (line) out.push(line);
+    return out;
+  }, [text, width, size]);
 
-export default ClaimLedger;
+  return (
+    <>
+      {lines.map((l, i) => (
+        <text
+          key={i}
+          x={x}
+          y={y + i * (size * 1.32)}
+          fill={fill}
+          opacity={opacity}
+          style={{ fontFamily: "'Inter', sans-serif", fontWeight: weight, fontSize: size, letterSpacing: 0.2 }}
+        >
+          {l}
+        </text>
+      ))}
+    </>
+  );
+};

@@ -40,6 +40,13 @@ explanation and a one-line command to reproduce the problem.
 Rejects its own output unless there are 8+ sources with 3+ marked high
 reliability, each carrying a quoted excerpt.
 
+Every stage's subprocess is also explicitly *denied* the filesystem and
+process tools (`DENIED_TOOLS` in `core/llm.mjs`). `--allowedTools` on its own is
+not a sandbox — it governs what runs without prompting, and an observed research
+run used `Bash` sixteen times and spawned two sub-agents inside this repository
+while "only" being granted the web tools. No stage needs more than text in and
+JSON out, so the capability is removed rather than left unrequested.
+
 ### 2. `claims` — draft the argument, not the prose
 
 Produces a thesis, a section plan on the house beat sheet, and a ledger of

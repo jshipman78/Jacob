@@ -1,663 +1,437 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
-import '@fontsource/inter/500.css';
-import '@fontsource/inter/600.css';
-import '@fontsource/inter/700.css';
 import type { SceneProps } from './types';
-import { SAFE_AREA, PALETTE } from './types';
+import {
+  Plate, PLATE, HatchField, StippleField, InkPath,
+  hatch, hatchContours, stipple, flicks, contour, segment, wobble, wobblyRect,
+  rngFor, makeFbm1D, lerp, clamp01, clamp,
+  onNs, rakingLight, ramp, stagger, settle, pulse, anticipate,
+  easeOutCubic, easeInOutCubic, easeOutQuint,
+} from './engraving';
 
 /**
- * StrataColumn — the central fact of the dig: Hisarlik is not one city but
- * at least nine, stacked across roughly four thousand years. A cross-section
- * earth column, oldest city at the bottom, most recent at the top, each
- * band with its own texture and colour temperature.
+ * StrataColumn — the central fact of the dig: Hisarlık is not one city but at
+ * least nine, stacked across four thousand years.
  *
- * The column stays alive for the whole shot: a slow continuous camera sink
- * through the stack, fine sediment sifting down through the section, a
- * highlighted layer breathing with warm light, and leader-lines that draw
- * themselves in rather than pop.
+ * Re-cut as an engraved section of the kind that faces page one of an
+ * excavation report. Each of the nine layers is a band of the block worked in
+ * its OWN mark-making — coursed masonry for the stone cities, close horizontal
+ * rule for silt, a broken flick-field for burnt destruction debris, stipple for
+ * loose fill — so a viewer can tell the layers apart by texture before reading
+ * a single numeral. That is the thing a flat colour-banded diagram cannot do.
+ *
+ * The camera sinks slowly down the section for the whole shot. Ticks and
+ * numerals draw themselves out in the margin, each trailing the band it
+ * annotates by a few frames.
  *
  * options:
- *   highlight?: string | string[]  — layer id(s) ('I'..'IX', plus 'VIIa' /
- *     'VIIb') to bring forward with a warm glow while others recede.
- *   mode?: 'intact' | 'destroyed'  — in 'destroyed', the upper layers are
- *     actively gouged and crumble away over the shot, with the removed
- *     material left as faint ghost outlines, illustrating what Schliemann's
- *     dig destroyed.
+ *   highlight?: string | string[]   — layer id(s) to bring up.
+ *   mode?: 'intact' | 'destroyed'   — 'destroyed' gouges the upper layers away
+ *                                     over the shot and leaves ghost outlines.
  */
 
-// ---------------------------------------------------------------------------
-// Deterministic PRNG (mulberry32) — seeded from the scene's `seed` prop so
-// texture placement is stable across out-of-order frame rendering.
-// ---------------------------------------------------------------------------
-function mulberry32(seed: number) {
-  let a = (seed >>> 0) || 1;
-  return function rand() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+const W = 1920;
+const H = 1080;
 
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
-const easeInCubic = (t: number) => Math.pow(clamp01(t), 3);
+/** The section occupies the right two-thirds; the margin carries the labels. */
+const COL_X = 690;
+const COL_W = 900;
+const COL_TOP = 96;
+const COL_BOTTOM = 812;
+const COL_H = COL_BOTTOM - COL_TOP;
+const LABEL_RIGHT = 655;
 
-// A bump function that is 0 at u=0 and u=1 and peaks at 1 in the middle —
-// used so looping particle motion fades out before it wraps, so the wrap
-// itself is never visible.
-const edgeFadeBump = (u: number, fadeFrac = 0.18) => {
-  if (u < fadeFrac) return u / fadeFrac;
-  if (u > 1 - fadeFrac) return (1 - u) / fadeFrac;
-  return 1;
-};
-
-type Texture = 'earth' | 'clay' | 'stone' | 'ash' | 'gold';
+type Texture = 'masonry' | 'silt' | 'burnt' | 'fill' | 'gold' | 'rubble';
 
 type LayerDef = {
   id: string;
   roman: string;
   years: string;
   weight: number;
-  top: string;
-  bottom: string;
   texture: Texture;
   note?: string;
 };
 
-// Bottom (oldest) to top (most recent).
+/** Bottom (oldest) to top (most recent). */
 const LAYERS: LayerDef[] = [
-  { id: 'I', roman: 'I', years: '3000–2550 BCE', weight: 1.22, top: '#3c2619', bottom: '#22130a', texture: 'earth' },
-  { id: 'II', roman: 'II', years: '2600–2350 BCE', weight: 1.0, top: '#4d3018', bottom: '#2c1a0c', texture: 'gold', note: 'the treasure' },
-  { id: 'III', roman: 'III', years: '2350–2200 BCE', weight: 0.62, top: '#3d2b1b', bottom: '#261a10', texture: 'earth' },
-  { id: 'IV', roman: 'IV', years: '2200–1900 BCE', weight: 0.74, top: '#41321f', bottom: '#291d10', texture: 'earth' },
-  { id: 'V', roman: 'V', years: '1900–1700 BCE', weight: 0.62, top: '#3b2f1f', bottom: '#241b10', texture: 'clay' },
-  { id: 'VI', roman: 'VI', years: '1700–1300 BCE', weight: 1.3, top: '#544c3a', bottom: '#332e22', texture: 'stone' },
-  { id: 'VIIa', roman: 'VIIa', years: '1300–1180 BCE', weight: 0.32, top: '#2a1c16', bottom: '#160f0a', texture: 'ash', note: 'war-era candidate' },
-  { id: 'VIIb', roman: 'VIIb', years: '1180–950 BCE', weight: 0.4, top: '#3a301e', bottom: '#241d10', texture: 'earth' },
-  { id: 'VIII', roman: 'VIII', years: '950–85 BCE', weight: 0.82, top: '#4a4232', bottom: '#2d281c', texture: 'stone' },
-  { id: 'IX', roman: 'IX', years: '85 BCE–500 CE', weight: 0.88, top: '#584f3c', bottom: '#372f21', texture: 'stone' },
+  { id: 'I',    roman: 'I',    years: '3000–2550 BCE', weight: 1.22, texture: 'fill' },
+  { id: 'II',   roman: 'II',   years: '2600–2350 BCE', weight: 1.05, texture: 'gold',    note: 'the treasure' },
+  { id: 'III',  roman: 'III',  years: '2350–2200 BCE', weight: 0.62, texture: 'rubble' },
+  { id: 'IV',   roman: 'IV',   years: '2200–1900 BCE', weight: 0.74, texture: 'fill' },
+  { id: 'V',    roman: 'V',    years: '1900–1700 BCE', weight: 0.62, texture: 'silt' },
+  { id: 'VI',   roman: 'VI',   years: '1700–1300 BCE', weight: 1.30, texture: 'masonry' },
+  { id: 'VIIa', roman: 'VIIa', years: '1300–1180 BCE', weight: 0.40, texture: 'burnt',   note: 'war-era candidate' },
+  { id: 'VIIb', roman: 'VIIb', years: '1180–950 BCE',  weight: 0.42, texture: 'rubble' },
+  { id: 'VIII', roman: 'VIII', years: '950–85 BCE',    weight: 0.82, texture: 'masonry' },
+  { id: 'IX',   roman: 'IX',   years: '85 BCE–500 CE', weight: 0.88, texture: 'masonry' },
 ];
 
 const TOTAL_WEIGHT = LAYERS.reduce((s, l) => s + l.weight, 0);
 
-// Column geometry (composition px, 1920x1080).
-const COL_X = 700;
-const COL_W = 700;
-const COL_TOP = 108;
-const COL_BOTTOM = 792;
-const COL_H = COL_BOTTOM - COL_TOP;
-const COL_CX = COL_X + COL_W / 2;
-const COL_CY = (COL_TOP + COL_BOTTOM) / 2;
-const LABEL_X = 640; // right-aligned numerals
-const TICK_X0 = 650;
+type Options = { highlight?: string | string[]; mode?: 'intact' | 'destroyed' };
 
-type StrataColumnOptions = {
-  highlight?: string | string[];
-  mode?: 'intact' | 'destroyed';
-};
-
-export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) => {
-  const opts = (options ?? {}) as StrataColumnOptions;
+export const StrataColumn: React.FC<SceneProps> = ({
+  progress, frame, fps, seed, options,
+}) => {
+  const opts = (options ?? {}) as Options;
   const mode = opts.mode ?? 'intact';
-  const highlightSet = useMemo(() => {
+  const highlight = useMemo(() => {
     const h = opts.highlight;
     if (!h) return new Set<string>();
     return new Set(Array.isArray(h) ? h : [h]);
   }, [opts.highlight]);
-  const hasHighlight = highlightSet.size > 0;
 
-  const seedInt = Math.floor(seed * 1e9) + 1;
+  const geo = useMemo(() => {
+    const rand = rngFor(seed, 'strata');
+    const fbm = makeFbm1D(seed, 'strataf');
 
-  // Precompute band vertical extents (bottom-up) and per-band texture, once
-  // per seed — not per frame.
-  // Note: `topY`/`bottomY` (not `top`/`bottom`) so these pixel positions
-  // don't collide with LayerDef's `top`/`bottom` colour-gradient stops.
-  const bands = useMemo(() => {
+    // Lay the bands out bottom-up.
     let cursor = COL_BOTTOM;
-    return LAYERS.map((layer, i) => {
-      const h = (layer.weight / TOTAL_WEIGHT) * COL_H;
+    const bands = LAYERS.map((def, i) => {
+      const h = (def.weight / TOTAL_WEIGHT) * COL_H;
       const bottomY = cursor;
       const topY = cursor - h;
       cursor = topY;
-      const rand = mulberry32(seedInt + i * 977);
-      return { ...layer, index: i, topY, bottomY, h, rand };
-    });
-  }, [seedInt]);
 
-  // Boundary wave paths (jitter) — one per internal boundary, deterministic.
-  const boundaries = useMemo(() => {
-    return bands.slice(0, -1).map((b, i) => {
-      const rand = mulberry32(seedInt + 5000 + i * 131);
-      const amp = 3 + rand() * 4;
-      const points = 6;
-      const pts: [number, number][] = [];
-      for (let p = 0; p <= points; p++) {
-        const x = COL_X + (COL_W * p) / points;
-        const y = b.topY + (rand() - 0.5) * amp * 2;
-        pts.push([x, y]);
+      // The interface between two layers is never flat — it is an old ground
+      // surface, dug into and trodden down.
+      const interfacePts: { x: number; y: number }[] = [];
+      for (let k = 0; k <= 40; k++) {
+        const u = k / 40;
+        interfacePts.push({
+          x: COL_X - 30 + u * (COL_W + 60),
+          y: topY + fbm(u * 5.5 + i * 17) * Math.min(9, h * 0.22),
+        });
       }
-      let d = `M ${pts[0][0]},${pts[0][1]}`;
-      for (let p = 1; p < pts.length; p++) {
-        const [px, py] = pts[p - 1];
-        const [cx, cy] = pts[p];
-        d += ` Q ${(px + cx) / 2},${py} ${cx},${cy}`;
-      }
-      return d;
-    });
-  }, [bands, seedInt]);
+      const interfaceLine = contour(seed, `iface${i}`, interfacePts, 1.3, 130);
 
-  // Texture speckles per band, memoized on seed. 'stone' bands get a
-  // coursed-masonry grid of thin outlined blocks (mortar lines), not
-  // filled blotches — the rest get sparse grit dots.
-  const speckleData = useMemo(() => {
-    return bands.map((b) => {
-      const rand = b.rand;
-      const count = b.texture === 'stone' ? Math.round(4 + b.weight * 5) : Math.round(6 + b.weight * 9);
-      const items: { x: number; y: number; w: number; h: number; c: string; op: number; kind: string }[] = [];
-      for (let k = 0; k < count; k++) {
-        const x = COL_X + 14 + rand() * (COL_W - 28);
-        const y = b.topY + 6 + rand() * Math.max(4, b.h - 12);
-        if (b.texture === 'stone') {
-          const r = 0.8 + rand() * 1.6;
-          items.push({ x, y, w: r, h: r, c: rand() > 0.5 ? '#00000040' : '#ffffff14', op: 0.3 + rand() * 0.3, kind: 'dot' });
-        } else if (b.texture === 'ash') {
-          const isEmber = rand() < 0.16;
-          const r = isEmber ? 2 + rand() * 2 : 1 + rand() * 2;
-          items.push({ x, y, w: r, h: r, c: isEmber ? PALETTE.ember : '#00000055', op: isEmber ? 0.85 : 0.5, kind: 'dot' });
-        } else if (b.texture === 'gold') {
-          const isFleck = rand() < 0.22;
-          const r = isFleck ? 2.2 + rand() * 2.4 : 1 + rand() * 1.6;
-          items.push({ x, y, w: r, h: r, c: isFleck ? PALETTE.gold : '#00000040', op: isFleck ? 0.9 : 0.45, kind: 'dot' });
-        } else {
-          const r = 1 + rand() * 2.2;
-          items.push({ x, y, w: r, h: r, c: rand() > 0.5 ? '#00000045' : '#ffffff10', op: 0.4 + rand() * 0.35, kind: 'dot' });
-        }
-      }
-      return items;
-    });
-  }, [bands]);
+      // Per-texture mark-making.
+      let marks: ReturnType<typeof hatch> = [];
+      let dots: ReturnType<typeof stipple> = [];
+      let courses: { d: string; len: number }[] = [];
 
-  // Coursed-masonry block grid for 'stone' bands (VI, VIII, IX) — thin
-  // mortar-line outlines in a running-bond pattern, not filled blotches.
-  const stoneBlocks = useMemo(() => {
-    return bands.map((b) => {
-      if (b.texture !== 'stone') return [] as { x: number; y: number; w: number; h: number; shade: number }[];
-      const rand = mulberry32(seedInt + 60000 + b.index * 71);
-      const rows = Math.max(2, Math.round(b.h / 24));
-      const rowH = b.h / rows;
-      const blocks: { x: number; y: number; w: number; h: number; shade: number }[] = [];
-      for (let r = 0; r < rows; r++) {
-        const rowY = b.topY + r * rowH;
-        let x = COL_X - (r % 2) * 45 - rand() * 20;
-        while (x < COL_X + COL_W) {
-          const w = 58 + rand() * 40;
-          const left = Math.max(COL_X, x);
-          const right = Math.min(COL_X + COL_W, x + w);
-          if (right - left > 6) {
-            blocks.push({ x: left, y: rowY + 1.5, w: right - left, h: Math.max(6, rowH - 4), shade: (rand() - 0.5) * 2 });
+      const region = { x: COL_X, y: topY, w: COL_W, h: Math.max(4, h) };
+
+      if (def.texture === 'masonry') {
+        // Coursed stone: horizontal bedding joints with staggered verticals.
+        const courseH = clamp(h / Math.max(2, Math.round(h / 26)), 14, 30);
+        for (let cy = topY + courseH; cy < bottomY - 2; cy += courseH) {
+          courses.push(
+            contour(seed, `c${i}-${cy.toFixed(0)}`,
+              segment({ x: COL_X + 6, y: cy }, { x: COL_X + COL_W - 6, y: cy + fbm(cy * 0.07) * 3 }, 14),
+              1.0, 150)
+          );
+          const n = 5 + Math.floor(rand() * 4);
+          for (let k = 0; k < n; k++) {
+            const jx = COL_X + 40 + rand() * (COL_W - 80);
+            courses.push(
+              contour(seed, `v${i}-${cy.toFixed(0)}-${k}`,
+                segment({ x: jx, y: cy }, { x: jx + fbm(jx * 0.02) * 2, y: Math.min(cy + courseH, bottomY - 2) }, 4),
+                0.8, 40)
+            );
           }
-          x += w + 4;
         }
+        marks = hatch(seed, `mas${i}`, {
+          ...region, angle: 24, pitch: 20, amp: 1.1, coverage: 0.5, jitter: 0.9,
+          width: 0.85, samples: 6,
+          density: (u) => clamp01(0.3 + fbm(u * 6 + i * 4) * 0.7),
+        });
+      } else if (def.texture === 'burnt') {
+        // Destruction debris: short violent flicks and heavy stipple. This is
+        // the layer that matters — the burnt city — so it has to look burnt.
+        marks = flicks(seed, `burnt${i}`, {
+          ...region, count: 320, length: 15,
+          angleAt: (u, v) => -60 + fbm(u * 9 + v * 4) * 120,
+          density: () => 0.9,
+        });
+        dots = stipple(seed, `burntd${i}`, { ...region, count: 420, minR: 0.6, maxR: 2.4 });
+      } else if (def.texture === 'silt') {
+        // Waterlaid silt: fine, close, unbroken horizontal rule.
+        marks = hatch(seed, `silt${i}`, {
+          ...region, angle: 0, pitch: 5.5, amp: 1.4, coverage: 0.9, jitter: 0.25,
+          width: 0.8, samples: 10,
+          density: (u) => clamp01(0.55 + fbm(u * 4 + i) * 0.5),
+        });
+      } else if (def.texture === 'rubble') {
+        marks = hatch(seed, `rub${i}`, {
+          ...region, angle: 52, pitch: 12, amp: 1.6, coverage: 0.42, jitter: 1.3,
+          width: 1.05, samples: 5,
+          density: (u, v) => clamp01(0.35 + fbm(u * 8 + v * 3 + i) * 0.85),
+        });
+        dots = stipple(seed, `rubd${i}`, { ...region, count: 260, minR: 0.6, maxR: 2.6 });
+      } else if (def.texture === 'gold') {
+        marks = hatch(seed, `gold${i}`, {
+          ...region, angle: 16, pitch: 11, amp: 1.3, coverage: 0.68, jitter: 0.7,
+          width: 1.0, samples: 8,
+          density: (u, v) => clamp01(0.45 + fbm(u * 5 + i) * 0.7) * clamp01(1.1 - v * 0.5),
+        });
+        dots = stipple(seed, `goldd${i}`, { ...region, count: 200, minR: 0.7, maxR: 2.8 });
+      } else {
+        // Loose fill: mid-pitch diagonal with heavy break-up.
+        marks = hatch(seed, `fill${i}`, {
+          ...region, angle: 34, pitch: 14, amp: 1.5, coverage: 0.5, jitter: 1.1,
+          width: 0.95, samples: 6,
+          density: (u, v) => clamp01(0.4 + fbm(u * 7 + v * 2 + i * 3) * 0.8),
+        });
+        dots = stipple(seed, `filld${i}`, { ...region, count: 300, minR: 0.5, maxR: 2.0 });
       }
-      return blocks;
+
+      return { def, topY, bottomY, h, interfaceLine, marks, dots, courses, index: i };
     });
-  }, [bands, seedInt]);
 
-  // Fine sediment sifting down through the whole section, continuously, for
-  // the entire shot. Each particle loops through the column height but
-  // fades to zero opacity before it wraps, so the wrap is never seen.
-  const sediment = useMemo(() => {
-    const rand = mulberry32(seedInt + 20000);
-    return Array.from({ length: 46 }).map(() => ({
-      x: COL_X + 10 + rand() * (COL_W - 20),
-      phase: rand(),
-      speed: 0.35 + rand() * 0.5, // fall cycles per full progress span
-      r: 0.6 + rand() * 1.4,
-      drift: (rand() - 0.5) * 10,
-    }));
-  }, [seedInt]);
+    // The plate frame: the ruled box the section is drawn inside.
+    const frameRect = wobblyRect(seed, 'frame', COL_X - 8, COL_TOP - 8, COL_W + 16, COL_H + 16, 1.3);
 
-  // Reveal: bands materialize bottom (oldest) to top across the first ~55%
-  // of the shot's progress, then hold — a slow, one-directional build with
-  // no loop.
-  const revealFor = (index: number) => {
-    const n = LAYERS.length;
-    const start = (index / n) * 0.5;
-    const end = start + 0.22;
-    return easeOutCubic((progress - start) / (end - start));
-  };
+    // The scale bar running down the left of the section.
+    const scaleTicks = bands.map((b) =>
+      contour(seed, `tick${b.index}`,
+        segment({ x: COL_X - 8, y: b.topY }, { x: COL_X - 62, y: b.topY - 2 }, 5), 0.9, 60)
+    );
 
-  // Highlight emphasis ramps in gently after the structure has settled,
-  // then breathes with a slow, tiny-amplitude pulse for the rest of the
-  // shot — present throughout, never distracting.
-  const glowBase = easeOutCubic((progress - 0.4) / 0.35);
-  const glowPulse = 1 + 0.09 * Math.sin(progress * Math.PI * 2 * 2.6);
-  const glowT = glowBase * glowPulse;
+    // For 'destroyed' mode: the profile of Schliemann's cut, gouged down
+    // through the upper layers.
+    const gougePts: { x: number; y: number }[] = [];
+    for (let k = 0; k <= 44; k++) {
+      const u = k / 44;
+      gougePts.push({
+        x: COL_X + 190 + u * 460,
+        y: COL_TOP + Math.sin(u * Math.PI) * 30 + fbm(u * 7 + 3) * 8,
+      });
+    }
 
-  // Slow continuous camera sink through the stack, plus an almost
-  // imperceptible breathing scale — alive for the whole shot, not just
-  // during the initial reveal.
-  const camDriftY = -30 * progress;
-  const camScale = 1 + 0.03 * progress + 0.006 * Math.sin(progress * Math.PI * 2 * 1.8);
-  const sceneTransform = `translateY(${camDriftY}px) scale(${camScale})`;
-  const sceneTransformOrigin = `${COL_CX}px ${COL_CY}px`;
+    return { bands, frameRect, scaleTicks, gougePts };
+  }, [seed]);
 
-  // Destroyed-mode: upper bands are gone; the boundary just below them is
-  // actively being quarried away, crumbling in staggered chunks across
-  // most of the shot rather than settling once into a finished ruin.
-  const ghostT = easeOutCubic((progress - 0.08) / 0.75);
-  const removedIds = new Set(['VIII', 'IX']);
-  const goutedPartialId = 'VIIb'; // shown partially quarried, not fully gone
+  const p = clamp01(progress);
 
-  const removedBandsForChunks = useMemo(
-    () => bands.filter((b) => removedIds.has(b.id) || b.id === goutedPartialId),
-    [bands]
-  );
+  // The section is cut from the bottom up — the oldest layer first, which is
+  // the order the ground was actually laid down in and the order the reveal
+  // reads best in.
+  const tFrame = ramp(p, 0.0, 0.12);
+  const bandT = (i: number) => stagger(ramp(p, 0.06, 0.72), i, LAYERS.length, 0.052, 0.30);
 
-  const crumbleChunks = useMemo(() => {
-    if (mode !== 'destroyed') return [];
-    const rand = mulberry32(seedInt + 33000);
-    const n = 22;
-    return Array.from({ length: n }).map(() => {
-      const band = removedBandsForChunks[Math.floor(rand() * removedBandsForChunks.length)];
-      const originX = COL_X + 20 + rand() * (COL_W - 40);
-      const originY = band.topY + rand() * band.h;
-      const startP = 0.06 + rand() * 0.78;
-      const fallDur = 0.14 + rand() * 0.16;
-      const w = 8 + rand() * 18;
-      const h = 6 + rand() * 12;
-      const rot = (rand() - 0.5) * 70;
-      const drift = (rand() - 0.5) * 90;
-      const fallDist = 260 + rand() * 260;
-      return { originX, originY, startP, fallDur, w, h, rot, drift, fallDist, color: band.bottom };
-    });
-  }, [mode, removedBandsForChunks, seedInt]);
+  // The camera sinks through the section: down, HOLD, down again. This is the
+  // hold-then-move rhythm the brief asks for — nothing eases continuously for
+  // forty seconds.
+  const sink =
+    easeOutQuint(ramp(p, 0.08, 0.32)) * 0.42 +
+    easeOutQuint(ramp(p, 0.50, 0.70)) * 0.34 +
+    easeInOutCubic(ramp(p, 0.82, 1.0)) * 0.24;
+  // Starts a touch high and settles low, but the travel is deliberately small:
+  // the shot's whole claim is that there are NINE layers, so the stack has to
+  // stay entirely in frame the whole time.
+  const camY = lerp(26, -44, sink);
+  const camScale = 1.0 + sink * 0.055;
+
+  // Falling sediment in front of the section — secondary motion, and it sells
+  // the section as a cut face rather than a chart.
+  const t = frame / fps;
+
+  const sweep = rakingLight(frame, fps, 27, seed);
+  const litness = (u: number) => 1 + 0.6 * Math.exp(-Math.pow((u - lerp(-0.2, 1.2, sweep)) / 0.22, 2));
+
+  const hasHighlight = highlight.size > 0;
+  const destroyed = mode === 'destroyed';
+  // In 'destroyed' mode the cut eats down through the upper bands over the
+  // shot, in three bites with holds between rather than as a smooth wipe.
+  const gouge = destroyed
+    ? easeOutCubic(ramp(p, 0.30, 0.40)) * 0.38 +
+      easeOutCubic(ramp(p, 0.52, 0.60)) * 0.34 +
+      easeOutCubic(ramp(p, 0.72, 0.82)) * 0.28
+    : 0;
+  const gougeDepth = COL_TOP + gouge * COL_H * 0.62;
+
+  const id = Math.round(seed * 1e6);
 
   return (
-    <AbsoluteFill style={{ backgroundColor: PALETTE.ink, overflow: 'hidden' }}>
-      {/* Ambient depth glow behind the column */}
+    <Plate seed={seed} frame={frame} fps={fps} tone="warm" lightPeriodSec={27} lightStrength={0.85}>
       <AbsoluteFill
         style={{
-          background: `radial-gradient(ellipse 900px 700px at ${COL_CX}px 500px, ${PALETTE.soilWarm}55 0%, transparent 70%)`,
+          transform: `translateY(${camY.toFixed(2)}px) scale(${camScale.toFixed(4)})`,
+          transformOrigin: '58% 40%',
         }}
-      />
+      >
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+          <defs>
+            {geo.bands.map((b) => (
+              <clipPath key={b.index} id={`band-${id}-${b.index}`}>
+                <rect x={COL_X} y={b.topY} width={COL_W} height={Math.max(1, b.h)} />
+              </clipPath>
+            ))}
+            {destroyed ? (
+              <clipPath id={`kept-${id}`}>
+                {/* Everything except the gouge — the material Schliemann left. */}
+                <path
+                  d={`M ${COL_X - 40} ${COL_BOTTOM + 60} L ${COL_X - 40} ${COL_TOP - 40} L ${geo.gougePts[0].x} ${COL_TOP - 40} ` +
+                     geo.gougePts.map((q) => `L ${q.x.toFixed(1)} ${(q.y + gougeDepth - COL_TOP).toFixed(1)}`).join(' ') +
+                     ` L ${geo.gougePts[geo.gougePts.length - 1].x} ${COL_TOP - 40} L ${COL_X + COL_W + 40} ${COL_TOP - 40} L ${COL_X + COL_W + 40} ${COL_BOTTOM + 60} Z`}
+                />
+              </clipPath>
+            ) : null}
+          </defs>
 
-      <svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{ position: 'absolute', inset: 0 }}>
-        <defs>
-          {bands.map((b) => (
-            <linearGradient key={`grad-${b.id}`} id={`grad-${b.id}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={b.top} />
-              <stop offset="100%" stopColor={b.bottom} />
-            </linearGradient>
-          ))}
-          <filter id="strataGlow" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="16" />
-          </filter>
-          <clipPath id="colClip">
-            <rect x={COL_X} y={COL_TOP} width={COL_W} height={COL_H} rx={3} />
-          </clipPath>
-          <linearGradient id="bedrockFade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={PALETTE.ink} stopOpacity={0} />
-            <stop offset="100%" stopColor={PALETTE.ink} stopOpacity={1} />
-          </linearGradient>
-        </defs>
-
-        <g style={{ transform: sceneTransform, transformOrigin: sceneTransformOrigin }}>
-          {/* Column frame */}
-          <rect
-            x={COL_X - 1}
-            y={COL_TOP - 1}
-            width={COL_W + 2}
-            height={COL_H + 2}
-            fill="none"
-            stroke={PALETTE.ash}
-            strokeOpacity={0.35}
-            strokeWidth={1}
-          />
-
-          {bands.map((b) => {
-            const isHi = highlightSet.has(b.id);
-            const dim = hasHighlight && !isHi;
-            const reveal = revealFor(b.index);
-            const isRemovedInDestroyed = mode === 'destroyed' && removedIds.has(b.id);
-            const isPartialQuarry = mode === 'destroyed' && b.id === goutedPartialId;
-
-            // In destroyed mode, removed bands render only as faint ghost
-            // outlines (no solid fill); the partial-quarry band keeps a
-            // shrinking solid remnant at its base as it's actively cut away.
-            const fillOpacity = isRemovedInDestroyed
-              ? 0
-              : reveal * (dim ? 0.38 : 1) * (isPartialQuarry ? lerp(1, 0.42, ghostT) : 1);
-
-            const bandHeight = isPartialQuarry ? b.h * lerp(1, 0.4, ghostT) : b.h;
-            const bandTop = isPartialQuarry ? b.bottomY - bandHeight : b.topY;
-
-            return (
-              <g key={b.id} clipPath="url(#colClip)">
-                <g
-                  style={{
-                    opacity: fillOpacity,
-                    transform: `translateY(${(1 - reveal) * 10}px)`,
-                    transformOrigin: `${COL_X + COL_W / 2}px ${b.bottomY}px`,
-                  }}
-                >
-                  <rect x={COL_X} y={bandTop} width={COL_W} height={bandHeight} fill={`url(#grad-${b.id})`} />
-                  {b.texture === 'stone' &&
-                    stoneBlocks[b.index].map((s, si) => (
-                      <rect
-                        key={`stone-${si}`}
-                        x={s.x}
-                        y={s.y}
-                        width={s.w}
-                        height={s.h}
-                        fill="none"
-                        stroke={s.shade > 0 ? '#ffffff' : '#000000'}
-                        strokeOpacity={0.1 + Math.abs(s.shade) * 0.05}
-                        strokeWidth={1}
-                        rx={1}
-                      />
-                    ))}
-                  {speckleData[b.index].map((s, si) =>
-                    s.kind === 'rect' ? (
-                      <rect key={si} x={s.x} y={s.y} width={s.w} height={s.h} fill={s.c} opacity={s.op} rx={2} />
-                    ) : (
-                      <circle key={si} cx={s.x} cy={s.y} r={s.w} fill={s.c} opacity={s.op} />
-                    )
-                  )}
-                </g>
-                {isHi && (
-                  <rect
-                    x={COL_X}
-                    y={bandTop}
-                    width={COL_W}
-                    height={bandHeight}
-                    fill={PALETTE.gold}
-                    opacity={0.16 * glowT}
-                    filter="url(#strataGlow)"
+          <g clipPath={destroyed ? `url(#kept-${id})` : undefined}>
+            {geo.bands.map((b) => {
+              const bt = bandT(b.index);
+              if (bt <= 0.005) return null;
+              const isHot = highlight.has(b.def.id);
+              const dim = hasHighlight && !isHot ? 0.34 : 1;
+              const col = b.def.texture === 'gold' || isHot ? PLATE.gold : PLATE.cut;
+              // A highlighted layer breathes — a slow, quantised swell, so it
+              // reads as lamplight moving on it rather than as a CSS pulse.
+              const breathe = isHot
+                ? 1 + 0.18 * Math.sin(onNs(frame, 4) * 0.055)
+                : 1;
+              return (
+                <g key={b.index} clipPath={`url(#band-${id}-${b.index})`}>
+                  <HatchField
+                    strokes={b.marks}
+                    t={bt}
+                    color={col}
+                    alpha={0.82 * dim * breathe}
+                    passes={5}
+                    modulate={(s) => litness(s.k)}
                   />
-                )}
+                  <StippleField dots={b.dots} t={bt} color={col} alpha={0.66 * dim * breathe} />
+                  {b.courses.map((c, k) => (
+                    <InkPath
+                      key={k}
+                      d={c.d}
+                      len={c.len}
+                      t={stagger(bt, k, b.courses.length, 0.008, 0.3)}
+                      color={col}
+                      width={0.9}
+                      opacity={0.6 * dim}
+                    />
+                  ))}
+                </g>
+              );
+            })}
+
+            {/* Layer interfaces — drawn last and heaviest, because they are
+                the actual evidence: each one is a city ending. */}
+            {geo.bands.map((b) => (
+              <InkPath
+                key={b.index}
+                d={b.interfaceLine.d}
+                len={b.interfaceLine.len}
+                t={bandT(b.index)}
+                color={highlight.has(b.def.id) ? PLATE.goldBright : PLATE.cut}
+                width={highlight.has(b.def.id) ? 2.4 : 1.5}
+                opacity={hasHighlight && !highlight.has(b.def.id) ? 0.35 : 0.85}
+              />
+            ))}
+          </g>
+
+          {destroyed && gouge > 0.02 ? (
+            <>
+              {/* The cut edge itself, and the ghost of what was removed. */}
+              <path
+                d={`M ${geo.gougePts[0].x} ${COL_TOP - 40} ` +
+                   geo.gougePts.map((q) => `L ${q.x.toFixed(1)} ${(q.y + gougeDepth - COL_TOP).toFixed(1)}`).join(' ') +
+                   ` L ${geo.gougePts[geo.gougePts.length - 1].x} ${COL_TOP - 40}`}
+                fill="none"
+                stroke={PLATE.ember}
+                strokeWidth={2.2}
+                opacity={0.8}
+              />
+              <text
+                x={COL_X + 420}
+                y={COL_TOP - 26}
+                textAnchor="middle"
+                fill={PLATE.ember}
+                opacity={0.75 * ramp(p, 0.44, 0.6)}
+                style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 20, letterSpacing: 3 }}
+              >
+                REMOVED, LARGELY UNRECORDED
+              </text>
+            </>
+          ) : null}
+
+          {/* Frame. */}
+          <InkPath d={geo.frameRect.d} len={geo.frameRect.len} t={tFrame} color={PLATE.cutDim} width={1.2} opacity={0.55} />
+
+          {/* Margin: ticks and numerals, each trailing its band. */}
+          {geo.bands.map((b) => {
+            const bt = bandT(b.index);
+            const lt = clamp01((bt - 0.45) / 0.5);
+            if (lt <= 0.01) return null;
+            const isHot = highlight.has(b.def.id);
+            const col = isHot ? PLATE.goldBright : PLATE.cut;
+            return (
+              <g key={b.index} opacity={hasHighlight && !isHot ? 0.4 : 1}>
+                <InkPath
+                  d={geo.scaleTicks[b.index].d}
+                  len={geo.scaleTicks[b.index].len}
+                  t={clamp01(bt / 0.6)}
+                  color={col}
+                  width={0.9}
+                  opacity={0.5}
+                />
+                <g opacity={lt} transform={`translate(${((1 - lt) * -10).toFixed(2)}, 0)`}>
+                  <text
+                    x={LABEL_RIGHT} y={b.topY + Math.min(30, b.h * 0.62)}
+                    textAnchor="end" fill={col}
+                    style={{ fontFamily: "'Cinzel', serif", fontWeight: 600, fontSize: isHot ? 38 : 31, letterSpacing: 2 }}
+                  >
+                    {b.def.roman}
+                  </text>
+                  <text
+                    x={LABEL_RIGHT} y={b.topY + Math.min(30, b.h * 0.62) + 22}
+                    textAnchor="end" fill={PLATE.cutDim}
+                    style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: 16, letterSpacing: 1.1 }}
+                  >
+                    {b.def.years}
+                  </text>
+                  {b.def.note && isHot ? (
+                    <text
+                      x={LABEL_RIGHT} y={b.topY + Math.min(30, b.h * 0.62) + 44}
+                      textAnchor="end" fill={PLATE.gold}
+                      style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 16, letterSpacing: 1.4 }}
+                    >
+                      {b.def.note}
+                    </text>
+                  ) : null}
+                </g>
               </g>
             );
           })}
 
-          {/* Fine sediment sifting down through the section, continuously */}
-          <g clipPath="url(#colClip)">
-            {sediment.map((p, i) => {
-              const u = (p.phase + progress * p.speed) % 1;
-              const y = COL_TOP + u * COL_H;
-              const op = 0.28 * edgeFadeBump(u);
-              if (op <= 0.01) return null;
-              return <circle key={i} cx={p.x + p.drift * u} cy={y} r={p.r} fill={PALETTE.bone} opacity={op} />;
-            })}
-          </g>
-
-          {/* Ghost outlines for destroyed-mode removed bands, and dashed
-              excavation rim. */}
-          {mode === 'destroyed' &&
-            bands
-              .filter((b) => removedIds.has(b.id))
-              .map((b) => (
-                <rect
-                  key={`ghost-${b.id}`}
-                  x={COL_X}
-                  y={b.topY}
-                  width={COL_W}
-                  height={b.h}
-                  fill="none"
-                  stroke={PALETTE.bone}
-                  strokeOpacity={0.22 * ghostT}
-                  strokeWidth={1.2}
-                  strokeDasharray="7 8"
-                />
-              ))}
-          {mode === 'destroyed' && (
-            <line
-              x1={COL_X - 6}
-              y1={COL_TOP + bands.find((b) => b.id === goutedPartialId)!.h * lerp(1, 0.4, ghostT)}
-              x2={COL_X + COL_W + 6}
-              y2={COL_TOP + bands.find((b) => b.id === goutedPartialId)!.h * lerp(1, 0.4, ghostT)}
-              stroke={PALETTE.ember}
-              strokeOpacity={0.32 * ghostT}
-              strokeWidth={1.5}
-              strokeDasharray="2 5"
-            />
-          )}
-
-          {/* Actively crumbling / falling debris, staggered across most of
-              the shot rather than resolving early. */}
-          {mode === 'destroyed' &&
-            crumbleChunks.map((c, i) => {
-              const age = clamp01((progress - c.startP) / c.fallDur);
-              if (age <= 0) return null;
-              const fall = easeInCubic(age);
-              const y = c.originY + fall * c.fallDist;
-              if (y > COL_BOTTOM + 60) return null;
-              const x = c.originX + c.drift * fall;
-              const opacity = age > 0.7 ? lerp(0.85, 0, (age - 0.7) / 0.3) : 0.85;
-              return (
-                <rect
-                  key={i}
-                  x={x - c.w / 2}
-                  y={y - c.h / 2}
-                  width={c.w}
-                  height={c.h}
-                  fill={c.color}
-                  opacity={opacity}
-                  transform={`rotate(${c.rot * age} ${x} ${y})`}
-                  rx={1.5}
-                />
-              );
-            })}
-
-          {/* Layer boundaries */}
-          {boundaries.map((d, i) => {
-            const reveal = Math.min(revealFor(bands[i].index), revealFor(bands[i + 1].index));
-            return (
-              <path
-                key={i}
-                d={d}
-                fill="none"
-                stroke={PALETTE.bone}
-                strokeOpacity={0.14 * reveal}
-                strokeWidth={1}
-              />
-            );
+          {/* Sediment sifting down the face of the section. */}
+          {Array.from({ length: 46 }, (_, i) => {
+            const k = i / 46;
+            const speed = 0.05 + (k % 0.27) * 0.16;
+            const u = ((t * speed) + k * 5.31) % 1;
+            const fade = Math.sin(u * Math.PI);
+            const o = fade * 0.5 * ramp(p, 0.2, 0.4);
+            if (o <= 0.02) return null;
+            const x = COL_X + 20 + ((k * 7919) % 1) * (COL_W - 40);
+            const y = COL_TOP + u * COL_H;
+            return <circle key={i} cx={x} cy={y} r={0.9 + (k % 0.3) * 3} fill={PLATE.cut} opacity={o} />;
           })}
+        </svg>
+      </AbsoluteFill>
 
-          {/* Highlight outline strokes, drawn above boundaries */}
-          {bands
-            .filter((b) => highlightSet.has(b.id))
-            .map((b) => (
-              <rect
-                key={`hi-outline-${b.id}`}
-                x={COL_X + 1}
-                y={b.topY + 1}
-                width={COL_W - 2}
-                height={b.h - 2}
-                fill="none"
-                stroke={PALETTE.goldBright}
-                strokeOpacity={0.7 * glowT}
-                strokeWidth={1.5}
-              />
-            ))}
-
-          {/* Bedrock fade below the column */}
-          <rect x={0} y={COL_BOTTOM - 60} width={1920} height={160} fill="url(#bedrockFade)" />
-
-          {/* Tick lines connecting labels to their band — drawn in, not
-              popped: they grow outward from the column edge. */}
-          {bands.map((b) => {
-            const isHi = highlightSet.has(b.id);
-            const dim = hasHighlight && !isHi;
-            const reveal = revealFor(b.index);
-            const cy = (b.topY + b.bottomY) / 2;
-            const inTitleBand = cy > SAFE_AREA.titleBandTop - 20 && cy < SAFE_AREA.titleBandBottom + 20;
-            const bandFade = inTitleBand ? 0.45 : 1;
-            const drawT = easeOutCubic((reveal - 0.15) / 0.5);
-            const x2 = lerp(COL_X, TICK_X0, clamp01(drawT));
-            return (
-              <line
-                key={`tick-${b.id}`}
-                x1={COL_X}
-                y1={cy}
-                x2={x2}
-                y2={cy}
-                stroke={isHi ? PALETTE.goldBright : PALETTE.ash}
-                strokeOpacity={reveal * bandFade * (dim ? 0.2 : isHi ? 0.85 : 0.4)}
-                strokeWidth={isHi ? 1.4 : 1}
-              />
-            );
-          })}
-        </g>
-
-        {/* Contrast relief across the section-title safe band */}
-        <rect
-          x={0}
-          y={SAFE_AREA.titleBandTop}
-          width={1920}
-          height={SAFE_AREA.titleBandBottom - SAFE_AREA.titleBandTop}
-          fill={PALETTE.ink}
-          opacity={0.3}
-        />
-        {/* Contrast relief across the subtitle safe band */}
-        <rect
-          x={0}
-          y={1080 - SAFE_AREA.bottom}
-          width={1920}
-          height={SAFE_AREA.bottom}
-          fill={PALETTE.ink}
-          opacity={0.55}
-        />
-      </svg>
-
-      {/* Labels — HTML for crisp Inter type, sharing the same camera drift */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', transform: sceneTransform, transformOrigin: sceneTransformOrigin }}>
-        {bands.map((b) => {
-          const isHi = highlightSet.has(b.id);
-          const dim = hasHighlight && !isHi;
-          const reveal = revealFor(b.index);
-          const cy = (b.topY + b.bottomY) / 2;
-          const inTitleBand = cy > SAFE_AREA.titleBandTop - 20 && cy < SAFE_AREA.titleBandBottom + 20;
-          const bandFade = inTitleBand ? 0.45 : 1;
-          const baseOpacity = reveal * bandFade * (dim ? 0.28 : isHi ? 1 : 0.62);
-          return (
-            <div
-              key={`label-${b.id}`}
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: cy,
-                width: LABEL_X,
-                transform: 'translateY(-50%)',
-                textAlign: 'right',
-                paddingRight: 14,
-                opacity: baseOpacity,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: isHi ? 700 : 600,
-                  fontSize: isHi ? 26 : 19,
-                  letterSpacing: 2,
-                  color: isHi ? PALETTE.goldBright : PALETTE.bone,
-                  lineHeight: 1.1,
-                }}
-              >
-                {b.roman}
-              </div>
-              <div
-                style={{
-                  fontFamily: 'Inter, sans-serif',
-                  fontWeight: 500,
-                  fontSize: 12.5,
-                  letterSpacing: 1,
-                  color: isHi ? PALETTE.gold : PALETTE.ash,
-                  marginTop: 2,
-                }}
-              >
-                {b.years}
-              </div>
-              {isHi && b.note && (
-                <div
-                  style={{
-                    fontFamily: 'Inter, sans-serif',
-                    fontWeight: 500,
-                    fontSize: 12.5,
-                    letterSpacing: 0.6,
-                    color: PALETTE.goldBright,
-                    marginTop: 2,
-                    fontStyle: 'italic',
-                    opacity: 0.9,
-                  }}
-                >
-                  {b.note}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {/* Surface / bedrock orientation labels */}
-        <div
-          style={{
-            position: 'absolute',
-            left: COL_X,
-            top: COL_TOP - 34,
-            fontFamily: 'Inter, sans-serif',
-            fontWeight: 600,
-            fontSize: 13,
-            letterSpacing: 3,
-            color: PALETTE.ash,
-            opacity: 0.55 * easeOutCubic(progress / 0.15),
-            textTransform: 'uppercase',
-          }}
-        >
-          Surface
+      {/* Header, set outside the moving plate so it stays anchored. */}
+      <div
+        style={{
+          position: 'absolute', left: 92, top: 116, width: 396,
+          opacity: ramp(p, 0.02, 0.2), pointerEvents: 'none',
+        }}
+      >
+        <div style={{ width: 200, height: 1, background: `linear-gradient(90deg, ${PLATE.gold}, transparent)`, opacity: 0.7, marginBottom: 12 }} />
+        <div style={{ fontFamily: "'Cinzel', serif", fontWeight: 700, fontSize: 34, letterSpacing: 4, color: PLATE.gold, lineHeight: 1.2 }}>
+          NINE CITIES
         </div>
-        <div
-          style={{
-            position: 'absolute',
-            left: COL_X,
-            top: COL_BOTTOM + 10,
-            fontFamily: 'Inter, sans-serif',
-            fontWeight: 500,
-            fontSize: 12,
-            letterSpacing: 2.5,
-            color: PALETTE.ash,
-            opacity: 0.4 * easeOutCubic((progress - 0.4) / 0.3),
-            textTransform: 'uppercase',
-          }}
-        >
-          Bedrock
+        <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: 18, letterSpacing: 1.6, color: PLATE.cutDim, marginTop: 10, lineHeight: 1.45 }}>
+          {destroyed
+            ? 'Material lost to the cut of 1871–73'
+            : 'Section through Hisarlık'}
         </div>
-
-        {mode === 'destroyed' && (
-          <div
-            style={{
-              position: 'absolute',
-              left: COL_X + COL_W + 30,
-              top: bands.find((b) => b.id === 'VIII')!.topY + 6,
-              fontFamily: 'Inter, sans-serif',
-              fontWeight: 500,
-              fontSize: 13,
-              letterSpacing: 1,
-              color: PALETTE.bone,
-              opacity: 0.45 * ghostT,
-              maxWidth: 260,
-              lineHeight: 1.4,
-            }}
-          >
-            removed by the 1873 excavation — unrecorded
-          </div>
-        )}
+        <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: 15, letterSpacing: 1.2, color: PLATE.cutFaint, marginTop: 26, lineHeight: 1.6 }}>
+          SURFACE ↑<br />BEDROCK ↓
+        </div>
       </div>
-    </AbsoluteFill>
+    </Plate>
   );
 };
-
-export default StrataColumn;

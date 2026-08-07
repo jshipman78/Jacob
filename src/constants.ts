@@ -33,9 +33,9 @@ export const KEN_BURNS_VERTICAL_DAMPING = 0.6;
 // ---------------------------------------------------------------------------
 // Grade / vignette
 // ---------------------------------------------------------------------------
-export const VIGNETTE_EDGE_OPACITY = 0.55;
-export const GRADE_WARMTH_OPACITY = 0.1;
-export const GRADE_DARKEN_OPACITY = 0.16;
+export const VIGNETTE_EDGE_OPACITY = 0.38;
+export const GRADE_WARMTH_OPACITY = 0.06;
+export const GRADE_DARKEN_OPACITY = 0.10;
 
 // ---------------------------------------------------------------------------
 // Subtitles

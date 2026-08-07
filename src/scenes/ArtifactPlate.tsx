@@ -1,561 +1,255 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
-import '@fontsource/inter/500.css';
-import '@fontsource/inter/600.css';
-import '@fontsource/cinzel/500.css';
 import type { SceneProps } from './types';
-import { PALETTE, SAFE_AREA } from './types';
+import {
+  Plate, PLATE, HatchField, StippleField, InkPath, PlateCaption,
+  hatch, crossHatch, stipple, contour, segment, wobblyEllipse, wobblyRect,
+  rngFor, makeFbm1D, lerp, clamp01,
+  onNs, rakingLight, ramp, stagger, settle, pulse,
+  easeOutCubic, easeInOutCubic, easeOutQuint,
+} from './engraving';
 
-// ---------------------------------------------------------------------------
-// ArtifactPlate — museum-plate treatment of the physical objects in the
-// story: a gold diadem, a two-handled cup, a heap of small ornaments, a
-// potsherd. Engraved-style line/fill work on a dark plate with a faint
-// catalogue label, lit warmly. Shapes are kept simple, symmetrical and
-// archaic — plausible Bronze Age Aegean forms, not invented fantasy
-// jewellery. Each artifact is drawn in its own local coordinate space and
-// then fit to a large on-screen window (computed from its bounding box) so
-// it reads as the subject of the frame, not a detail lost in it.
-//
-// Motion model: the artifact's reveal, hatch build-up and label draw-in are
-// driven by `progress` (a clear one-time arc). Once on screen it stays
-// present and lit: a slow rotation/bob, a travelling specular highlight and
-// a few dust motes crossing in front are driven off `frame/fps` (elapsed
-// seconds) so the plate is never a frozen photograph, at a rate that reads
-// the same whether the shot is 5s or 55s.
-// ---------------------------------------------------------------------------
+/**
+ * ArtifactPlate — the gold, drawn the way the gold was actually published: as
+ * a numbered figure on a museum plate, cross-hatched, with a scale bar and a
+ * catalogue caption.
+ *
+ * The engraved convention for metal is specific and worth getting right: the
+ * form is modelled in tight curved hatching that follows the surface, the
+ * highlights are left completely uncut, and the reflections are hard-edged.
+ * That is what makes a drawn object read as gold rather than as a yellow
+ * shape — and here it also carries the story, because the plate's neat
+ * catalogue authority is exactly the authority Schliemann was borrowing.
+ *
+ * options:
+ *   artifact: 'diadem' | 'hoard'
+ *   label?: string
+ */
 
-export type ArtifactKind = 'diadem' | 'cup' | 'hoard' | 'sherd';
+const W = 1920;
+const H = 1080;
+const CX = 960;
+const CY = 400;
 
-export interface ArtifactPlateOptions {
-  artifact?: ArtifactKind;
-  label?: string;
-}
+type Artifact = 'diadem' | 'hoard';
+type Options = { artifact?: Artifact; label?: string };
 
-function mulberry32(seed: number) {
-  let a = seed >>> 0;
-  return function rand() {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export const ArtifactPlate: React.FC<SceneProps> = ({
+  progress, frame, fps, seed, options,
+}) => {
+  const opts = (options ?? {}) as Options;
+  const artifact = opts.artifact ?? 'diadem';
+  const label = opts.label ?? 'GOLD DIADEM · TROY II';
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
-const TAU = Math.PI * 2;
+  const geo = useMemo(() => {
+    const rand = rngFor(seed, 'artifact');
+    const fbm = makeFbm1D(seed, 'artf');
 
-const DEFAULT_LABELS: Record<ArtifactKind, string> = {
-  diadem: 'GOLD DIADEM — TROY II HOARD',
-  cup: 'TWO-HANDLED CUP · DEPAS AMPHIKYPELLON',
-  hoard: 'GOLD ORNAMENTS, ASSORTED',
-  sherd: 'PAINTED POTSHERD, EARLY BRONZE AGE',
-};
-
-const GOLD_ID_GRAD = 'artifactGoldGrad';
-const GOLD_ID_GRAD_SOFT = 'artifactGoldGradSoft';
-
-// A per-item build-in used across artifacts: index i of n reveals across
-// the [start, end] fraction of `progress`, staggered evenly.
-function buildIn(progress: number, i: number, n: number, start: number, end: number, span = 0.16) {
-  const t = n <= 1 ? start : lerp(start, end, i / Math.max(1, n - 1));
-  return easeOutCubic((progress - t) / span);
-}
-
-// Local-coordinate bounding boxes for each artifact drawing below — used to
-// fit each shape to a large, consistent on-screen window regardless of its
-// natural proportions (a tall cup vs. a wide heap).
-type BBox = { left: number; right: number; top: number; bottom: number };
-const ARTIFACT_BBOX: Record<ArtifactKind, BBox> = {
-  diadem: { left: -250, right: 250, top: -26, bottom: 302 },
-  cup: { left: -176, right: 176, top: -250, bottom: 224 },
-  hoard: { left: -258, right: 258, top: -170, bottom: 130 },
-  sherd: { left: -182, right: 188, top: -202, bottom: 106 },
-};
-
-// ---------------------------------------------------------------------------
-// Individual artifact drawings, in a local coordinate space centered near
-// the object's natural pivot (see ARTIFACT_BBOX above for their extents).
-// ---------------------------------------------------------------------------
-
-// Exact point on the diadem's quadratic band curve at parameter t (0..1).
-function bandCurveY(t: number) {
-  const p0 = -18;
-  const p1 = 54; // control point — bows the band down gently in the middle
-  const p2 = -18;
-  const u = 1 - t;
-  return u * u * p0 + 2 * u * t * p1 + t * t * p2;
-}
-
-const Diadem: React.FC<{ rng: () => number; progress: number }> = ({ rng, progress }) => {
-  const bandPath = 'M -230 -18 Q 0 54 230 -18';
-  const fringeCount = 21;
-  const fringe = Array.from({ length: fringeCount }, (_, i) => {
-    const t = i / (fringeCount - 1);
-    const x = lerp(-222, 222, t);
-    const bandY = bandCurveY(t);
-    const len = 30 + 16 * Math.sin(t * Math.PI) + rng() * 8;
-    return { x, y: bandY, len };
-  });
-  const bossCount = 15;
-  const bosses = Array.from({ length: bossCount }, (_, i) => {
-    const t = i / (bossCount - 1);
-    return { x: lerp(-222, 222, t), y: bandCurveY(t) };
-  });
-  const endChain = (side: number) =>
-    Array.from({ length: 7 }, (_, i) => ({
-      x: side * (230 + i * 4),
-      y: -10 + i * 42,
-    }));
-
-  const bandDraw = easeOutCubic((progress - 0.02) / 0.24);
-
-  return (
-    <g>
-      {/* Under-shadow for a sense of thickness. */}
-      <path
-        d="M -230 -10 Q 0 64 230 -10"
-        fill="none"
-        stroke="#1c1206"
-        strokeWidth={20}
-        strokeLinecap="round"
-        opacity={0.4 * bandDraw}
-      />
-      <path
-        d={bandPath}
-        fill="none"
-        stroke={`url(#${GOLD_ID_GRAD})`}
-        strokeWidth={22}
-        strokeLinecap="round"
-        pathLength={1}
-        strokeDasharray={1}
-        strokeDashoffset={1 - bandDraw}
-      />
-      {/* Bright top edge, offset slightly up, for a beaten-metal highlight. */}
-      <path
-        d="M -230 -24 Q 0 40 230 -24"
-        fill="none"
-        stroke={PALETTE.goldBright}
-        strokeWidth={3}
-        strokeLinecap="round"
-        opacity={0.55 * bandDraw}
-      />
-      {bosses.map((b, i) => (
-        <circle key={i} cx={b.x} cy={b.y} r={6.5} fill="#3a2a12" opacity={0.55 * bandDraw} />
-      ))}
-      {bosses.map((b, i) => (
-        <circle key={`hl-${i}`} cx={b.x - 1.4} cy={b.y - 1.4} r={2.2} fill={PALETTE.goldBright} opacity={0.4 * bandDraw} />
-      ))}
-      {fringe.map((f, i) => {
-        const a = buildIn(progress, i, fringe.length, 0.2, 0.58);
-        return (
-          <g key={i} opacity={a}>
-            <line
-              x1={f.x}
-              y1={f.y}
-              x2={f.x}
-              y2={f.y + f.len * a}
-              stroke={`url(#${GOLD_ID_GRAD})`}
-              strokeWidth={3.6}
-              strokeLinecap="round"
-            />
-            <path
-              d={`M ${f.x - 6} ${f.y + f.len * a} q 6 14 6 14 q 0 0 6 -14 q -6 -6 -6 -6 q 0 0 -6 6 Z`}
-              fill={`url(#${GOLD_ID_GRAD})`}
-            />
-          </g>
-        );
-      })}
-      {[-1, 1].map((side, si) => {
-        const a = buildIn(progress, si, 2, 0.5, 0.62);
-        return (
-          <g key={side} opacity={a}>
-            {endChain(side).map((c, i) => (
-              <circle
-                key={i}
-                cx={c.x}
-                cy={c.y}
-                r={7}
-                fill="none"
-                stroke={`url(#${GOLD_ID_GRAD})`}
-                strokeWidth={3.4}
-              />
-            ))}
-            <path
-              d={`M ${side * 230} 260 q ${side * 20} 24 0 46 q ${side * -20} -22 0 -46 Z`}
-              fill={`url(#${GOLD_ID_GRAD})`}
-              stroke="#2a1c0c"
-              strokeWidth={1.5}
-            />
-          </g>
-        );
-      })}
-    </g>
-  );
-};
-
-const Cup: React.FC<{ rng: () => number; progress: number }> = ({ rng, progress }) => {
-  const bodyPath =
-    'M -70 -230 C -92 -190 -96 -120 -80 -40 C -66 26 -70 90 -96 150 C -104 172 -70 190 0 190 C 70 190 104 172 96 150 C 70 90 66 26 80 -40 C 96 -120 92 -190 70 -230 Z';
-  const rimPath = 'M -70 -230 C -30 -244 30 -244 70 -230';
-  const handle = (side: number) =>
-    `M ${side * 78} -160 C ${side * 168} -150 ${side * 168} -20 ${side * 82} 10`;
-  const reliefY = [-110, 40];
-
-  const bodyIn = easeOutCubic((progress - 0.02) / 0.3);
-  const hatchLines = 12;
-
-  return (
-    <g>
-      <path d={bodyPath} fill={`url(#${GOLD_ID_GRAD})`} stroke="#2a1c0c" strokeWidth={3} opacity={bodyIn} />
-      <path d={rimPath} fill="none" stroke="#3a2712" strokeWidth={4} opacity={0.6 * bodyIn} />
-      <path d={rimPath} fill="none" stroke={PALETTE.goldBright} strokeWidth={1.4} opacity={0.4 * bodyIn} transform="translate(0 -3)" />
-      {/* Relief bands around the body for a made, decorated surface. */}
-      {reliefY.map((ry, i) => (
-        <path
-          key={i}
-          d={`M -90 ${ry} Q 0 ${ry + 14} 90 ${ry}`}
-          fill="none"
-          stroke="#2a1c0c"
-          strokeWidth={2}
-          opacity={0.3 * bodyIn}
-        />
-      ))}
-      {[-1, 1].map((side, si) => {
-        const a = buildIn(progress, si, 2, 0.24, 0.4);
-        return (
-          <g key={side} opacity={a}>
-            <path
-              d={handle(side)}
-              fill="none"
-              stroke={`url(#${GOLD_ID_GRAD})`}
-              strokeWidth={20}
-              strokeLinecap="round"
-            />
-            <path
-              d={handle(side)}
-              fill="none"
-              stroke={PALETTE.goldBright}
-              strokeWidth={2.4}
-              strokeLinecap="round"
-              opacity={0.4}
-              transform={`translate(${side * -3} -3)`}
-            />
-          </g>
-        );
-      })}
-      <path d="M -50 188 Q 0 214 50 188 L 40 202 Q 0 220 -40 202 Z" fill={`url(#${GOLD_ID_GRAD_SOFT})`} opacity={bodyIn} />
-      {/* Engraved shading hatch, built up in sequence like a plate print. */}
-      {Array.from({ length: hatchLines }, (_, i) => {
-        const y = -200 + i * 34 + rng() * 6;
-        const a = buildIn(progress, i, hatchLines, 0.38, 0.72, 0.12);
-        return (
-          <line
-            key={i}
-            x1={20}
-            y1={y}
-            x2={20 + (86 - i * 2 - 20) * a}
-            y2={y + 16 * a}
-            stroke="#241708"
-            strokeWidth={2}
-            opacity={0.32 * a}
-          />
-        );
-      })}
-    </g>
-  );
-};
-
-const Hoard: React.FC<{ rng: () => number; progress: number }> = ({ rng, progress }) => {
-  type Bit = { x: number; y: number; s: number; kind: number; rot: number };
-  const bits: Bit[] = useMemo(() => {
-    const list: Bit[] = [];
-    const n = 104;
-    for (let i = 0; i < n; i++) {
-      const a = rng() * Math.PI * 2;
-      const rad = Math.pow(rng(), 0.55) * 240;
-      const x = Math.cos(a) * rad;
-      const y = Math.sin(a) * rad * 0.55 - 22;
-      list.push({ x, y, s: 8 + rng() * 22, kind: Math.floor(rng() * 4), rot: rng() * 360 });
+    // --- the diadem: a band with pendant chains, as published -------------
+    const bandTop: { x: number; y: number }[] = [];
+    const bandBot: { x: number; y: number }[] = [];
+    for (let i = 0; i <= 60; i++) {
+      const u = i / 60;
+      const x = CX - 400 + u * 800;
+      const sag = Math.sin(u * Math.PI) * 44;
+      bandTop.push({ x, y: CY - 90 + sag * 0.55 + fbm(u * 8) * 3 });
+      bandBot.push({ x, y: CY - 42 + sag + fbm(u * 8 + 30) * 3 });
     }
-    return list.sort((p, q) => p.y - q.y);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const bandT = contour(seed, 'bandT', bandTop, 1.2, 160);
+    const bandB = contour(seed, 'bandB', bandBot, 1.2, 160);
 
-  return (
-    <g>
-      {bits.map((b, i) => {
-        const a = buildIn(progress, i, bits.length, 0.02, 0.62, 0.09);
-        const s = 0.85 + 0.15 * a;
-        const shadow = (
-          <ellipse cx={b.x + 3} cy={b.y + b.s * 0.32} rx={b.s * 0.5} ry={b.s * 0.16} fill="#000" opacity={0.28 * a} />
-        );
-        const shapeProps = {
-          opacity: a,
-          transform: `translate(${b.x} ${b.y}) rotate(${b.rot}) scale(${s})`,
-        };
-        if (b.kind === 0) {
-          return (
-            <g key={i}>
-              {shadow}
-              <circle cx={0} cy={0} r={b.s * 0.5} fill={`url(#${GOLD_ID_GRAD})`} {...shapeProps} />
-            </g>
-          );
-        }
-        if (b.kind === 1) {
-          return (
-            <g key={i}>
-              {shadow}
-              <circle
-                cx={0}
-                cy={0}
-                r={b.s * 0.5}
-                fill="none"
-                stroke={`url(#${GOLD_ID_GRAD})`}
-                strokeWidth={Math.max(2, b.s * 0.2)}
-                {...shapeProps}
-              />
-            </g>
-          );
-        }
-        if (b.kind === 2) {
-          return (
-            <g key={i}>
-              {shadow}
-              <ellipse cx={0} cy={0} rx={b.s * 0.55} ry={b.s * 0.32} fill={`url(#${GOLD_ID_GRAD_SOFT})`} {...shapeProps} />
-            </g>
-          );
-        }
-        return (
-          <g key={i}>
-            {shadow}
-            <path
-              d={`M ${-b.s * 0.5} 0 q ${b.s * 0.25} ${-b.s * 0.6} ${b.s * 0.5} 0 q ${b.s * 0.25} ${
-                b.s * 0.6
-              } -${b.s * 0.5} 0 Z`}
-              fill={`url(#${GOLD_ID_GRAD})`}
-              {...shapeProps}
-            />
-          </g>
-        );
-      })}
-    </g>
-  );
-};
+    // Pendant chains hanging from the band — the diadem's whole character.
+    const chains = Array.from({ length: 27 }, (_, i) => {
+      const u = (i + 0.5) / 27;
+      const x = CX - 400 + u * 800;
+      const yTop = CY - 42 + Math.sin(u * Math.PI) * 44;
+      // Longer in the middle, as on the real object.
+      const len = 90 + Math.sin(u * Math.PI) * 150 + rand() * 26;
+      const links = Math.round(len / 15);
+      return { x, yTop, len, links, u, sway: 0.6 + rand() * 0.8, phase: rand() * 6.28 };
+    });
 
-const Sherd: React.FC<{ rng: () => number; progress: number }> = ({ rng, progress }) => {
-  // One long smooth curve (the surviving exterior surface of the vessel)
-  // along the bottom, irregular angular fracture edges elsewhere — reading
-  // as a broken fragment rather than a symmetric scalloped shape.
-  const outline =
-    'M -158 58 C -80 96 60 100 172 42 L 148 -6 L 184 -46 L 132 -84 L 158 -132 L 92 -146 L 44 -196 L -8 -150 L -66 -198 L -104 -146 L -74 -104 L -138 -76 L -96 -34 L -166 12 Z';
-  const arcs = [48, 84, 122];
-  const bodyIn = easeOutCubic((progress - 0.02) / 0.3);
-  const hatch = 10;
-  const rivets = [
-    { x: -132, y: -8 },
-    { x: 136, y: -18 },
-  ];
+    // --- the hoard: a heaped mass of vessels and small objects -------------
+    const hoard = Array.from({ length: 22 }, (_, i) => {
+      const u = i / 22;
+      const ang = u * Math.PI * 2 * 1.7;
+      const r = 60 + rand() * 280;
+      return {
+        x: CX + Math.cos(ang) * r * 1.35,
+        y: CY + 40 + Math.sin(ang) * r * 0.46,
+        rx: 26 + rand() * 62,
+        ry: 20 + rand() * 48,
+        kind: Math.floor(rand() * 3),
+        rot: (rand() - 0.5) * 40,
+        k: u,
+      };
+    }).sort((a, b) => a.y - b.y);
 
-  return (
-    <g>
-      <path d={outline} fill={`url(#${GOLD_ID_GRAD_SOFT})`} stroke="#241a10" strokeWidth={3} opacity={bodyIn} />
-      {arcs.map((r, i) => {
-        const a = buildIn(progress, i, arcs.length, 0.3, 0.55, 0.14);
-        return (
-          <path
-            key={i}
-            d={`M ${-r} 6 A ${r} ${r} 0 0 1 ${r} 6`}
-            fill="none"
-            stroke="#2c1d0e"
-            strokeWidth={4}
-            opacity={(0.55 - i * 0.1) * a}
-            transform="translate(0 -38)"
-          />
-        );
-      })}
-      {Array.from({ length: hatch }, (_, i) => {
-        const x = -150 + i * 32 + rng() * 8;
-        const a = buildIn(progress, i, hatch, 0.42, 0.68, 0.12);
-        return (
-          <line key={i} x1={x} y1={-170} x2={x + 8} y2={-170 + 260 * a} stroke="#1c130a" strokeWidth={1.4} opacity={0.2 * a} />
-        );
-      })}
-      {rivets.map((rv, i) => {
-        const a = buildIn(progress, i, rivets.length, 0.55, 0.68, 0.12);
-        return <circle key={i} cx={rv.x} cy={rv.y} r={5} fill="#0e0a06" opacity={0.6 * a} />;
-      })}
-    </g>
-  );
-};
-
-export const ArtifactPlate: React.FC<SceneProps> = ({ progress, frame, fps, seed, options }) => {
-  const opts = (options ?? {}) as ArtifactPlateOptions;
-  const artifact: ArtifactKind = opts.artifact ?? 'diadem';
-  const label = opts.label ?? DEFAULT_LABELS[artifact];
-  const t = frame / Math.max(1, fps);
-
-  const seedInt = Math.floor(clamp(seed, 0, 0.999999) * 1_000_000_007) + 53;
-  const rng = useMemo(() => mulberry32(seedInt), [seedInt]);
-  const phase = useMemo(() => rng() * TAU, [rng]);
-  const phase2 = useMemo(() => rng() * TAU, [rng]);
-  const plateJitter = useMemo(() => ({ dx: (rng() - 0.5) * 24 }), [rng]);
-
-  // Fit the artifact's bounding box to a large window, then center it
-  // within the usable area (roughly y=80..800, above the subtitle band)
-  // rather than pinning it to the top — so every artifact, regardless of
-  // its natural proportions, sits with a comfortable margin above and a
-  // clear gap to the catalogue label below.
-  const bbox = ARTIFACT_BBOX[artifact];
-  const windowTop = 80;
-  const windowBottom = 800;
-  const minMargin = 100; // guaranteed clearance above the artifact's top
-  const availH = windowBottom - windowTop - minMargin * 2;
-  const leftMargin = 170;
-  const rightMargin = 1920 - 170;
-  const availW = rightMargin - leftMargin;
-  const fitScale = Math.min(availH / (bbox.bottom - bbox.top), availW / (bbox.right - bbox.left));
-  const originX = 960 + plateJitter.dx;
-  const originY = (windowTop + windowBottom) / 2 - ((bbox.top + bbox.bottom) / 2) * fitScale;
-
-  const ringCX = originX;
-  const ringCY = originY + ((bbox.top + bbox.bottom) / 2) * fitScale; // == (windowTop+windowBottom)/2
-  const halfSpan = Math.max(bbox.right - bbox.left, bbox.bottom - bbox.top) * fitScale * 0.5;
-  const plateR = clamp(halfSpan * 1.14 + 64, 260, 380);
-
-  const dustMotes = useMemo(() => {
-    const n = 16;
-    return Array.from({ length: n }, () => ({
-      x: rng() * 900 - 450,
-      y: rng() * 900 - 450,
-      r: 1.2 + rng() * 2.6,
-      speed: lerp(8, 22, rng()),
-      angle: rng() * TAU,
-      phase: rng() * TAU,
+    const hoardShapes = hoard.map((h, i) => ({
+      ...h,
+      ring: wobblyEllipse(seed, `h${i}`, h.x, h.y, h.rx, h.ry, 1.0, 34),
+      tone: hatch(seed, `ht${i}`, {
+        x: h.x - h.rx, y: h.y - h.ry, w: h.rx * 2, h: h.ry * 2,
+        angle: 62 + h.rot, pitch: 5.5, amp: 0.8, coverage: 0.85, jitter: 0.4,
+        width: 0.85, samples: 6,
+        density: (u, v) => {
+          const dx = u - 0.42;
+          const dy = v - 0.34;
+          const rr = Math.hypot(dx, dy) * 2;
+          // Highlight left completely uncut at upper-left — the metal's gleam.
+          return clamp01((1 - Math.pow(rr, 1.9)) * clamp01((rr - 0.22) * 3.2));
+        },
+      }),
     }));
-  }, [rng]);
 
-  const revealIn = easeOutCubic(progress / 0.18);
-  const scale = lerp(0.94, 1, revealIn);
-  const opacity = revealIn;
+    // --- the plate's own furniture -----------------------------------------
+    const frame = wobblyRect(seed, 'aframe', 150, 96, W - 300, 660, 1.5);
+    const scaleBar = contour(seed, 'scale',
+      segment({ x: CX - 130, y: 706 }, { x: CX + 130, y: 707 }, 10), 0.9, 120);
 
-  // Slow, continuous pendulum rotation + bob — always alive, independent of
-  // shot length.
-  const rotate = Math.sin((t * TAU) / 17 + phase) * 1.5;
-  const bob = Math.sin((t * TAU) / 12 + phase * 0.7) * 6;
-  const microScale = 1 + 0.006 * Math.sin((t * TAU) / 9 + phase2);
+    const ground = crossHatch(seed, 'aground', {
+      x: 160, y: 106, w: W - 320, h: 640,
+      angle: 33, pitch: 26, amp: 2.2, coverage: 0.4, jitter: 1.3, width: 0.85, samples: 6,
+      crossAngle: 87, crossPitch: 38,
+      density: (u, v) => clamp01(1 - Math.hypot((u - 0.5) * 1.7, (v - 0.42) * 2.0)) * 0.85,
+    });
 
-  // Travelling specular highlight across the metal.
-  const sweepT = (Math.sin((t * TAU) / 13 + phase2) + 1) / 2; // 0..1, oscillates slowly
+    const motes = stipple(seed, 'amotes', {
+      x: 160, y: 106, w: W - 320, h: 640, count: 300, minR: 0.5, maxR: 2.0,
+      density: (u, v) => clamp01(1 - Math.hypot((u - 0.5) * 1.5, (v - 0.42) * 1.9)),
+    });
 
-  // Label sits at a fixed, safe position regardless of the artifact's own
-  // geometry — always clear of the subtitle band, always findable.
-  const labelY = 1080 - SAFE_AREA.bottom - 34;
-  const labelDraw = easeOutCubic((progress - 0.16) / 0.24);
+    return { bandT, bandB, chains, hoardShapes, frame, scaleBar, ground, motes };
+  }, [seed]);
+
+  const p = clamp01(progress);
+  const t = frame / fps;
+
+  const tFrame = ramp(p, 0.0, 0.16);
+  const tGround = ramp(p, 0.04, 0.34);
+  const tObject = ramp(p, 0.10, 0.58);
+  const tDetail = ramp(p, 0.28, 0.76);
+  const tCaption = ramp(p, 0.44, 0.66);
+
+  // The object turns very slightly under the light, as a held object does.
+  // Quantised to fours so it reads as a drawn rotation, not a 3D tween.
+  const turn = Math.sin(onNs(frame, 4) * 0.0125 + seed * 6) * 1.5;
+  const push = easeInOutCubic(ramp(p, 0.02, 1.0));
+  const camScale = 1.02 + push * 0.09;
+
+  // The gleam: a hard-edged highlight travelling across the metal. This is the
+  // element that does the most work in selling the material.
+  const gleam = rakingLight(frame, fps, 12, seed);
+  const gleamU = lerp(-0.25, 1.25, gleam);
+  const metal = (u: number) => 1 + 1.5 * Math.exp(-Math.pow((u - gleamU) / 0.13, 2));
 
   return (
-    <AbsoluteFill style={{ backgroundColor: PALETTE.ink }}>
+    <Plate seed={seed} frame={frame} fps={fps} tone="warm" lightPeriodSec={22} lightStrength={0.95}>
       <AbsoluteFill
         style={{
-          background: `radial-gradient(circle at ${ringCX}px ${ringCY}px, #1c130a 0%, #0c0805 55%, ${PALETTE.ink} 100%)`,
+          transform: `scale(${camScale.toFixed(4)}) rotate(${turn.toFixed(3)}deg)`,
+          transformOrigin: '50% 38%',
         }}
+      >
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+          <HatchField strokes={geo.ground.first} t={tGround} color={PLATE.cut} alpha={0.22} passes={5} />
+          <HatchField strokes={geo.ground.second} t={ramp(p, 0.14, 0.5)} color={PLATE.cutDim} alpha={0.18} passes={4} />
+          <StippleField dots={geo.motes} t={tGround} color={PLATE.cut} alpha={0.24} />
+          <InkPath d={geo.frame.d} len={geo.frame.len} t={tFrame} color={PLATE.cutDim} width={1.2} opacity={0.5} />
+
+          {artifact === 'diadem' ? (
+            <g>
+              <InkPath d={geo.bandT.d} len={geo.bandT.len} t={tObject} color={PLATE.gold} width={2.4} opacity={0.95} />
+              <InkPath d={geo.bandB.d} len={geo.bandB.len} t={clamp01((tObject - 0.08) / 0.92)} color={PLATE.gold} width={2.4} opacity={0.95} />
+
+              {/* The pendant chains. Each hangs from the band, sways on its own
+                  slow period, and the ones nearer the centre are longer and
+                  lag further behind — overlapping action across 27 elements. */}
+              {geo.chains.map((c, i) => {
+                const ct = stagger(tDetail, i, geo.chains.length, 0.022, 0.24);
+                if (ct <= 0.02) return null;
+                const swing = Math.sin(t * 0.55 * c.sway + c.phase) * 6 * c.sway;
+                const links = Math.max(2, Math.round(c.links * easeOutCubic(ct)));
+                return (
+                  <g key={i} opacity={metal(c.u) * 0.55}>
+                    {Array.from({ length: links }, (_, k) => {
+                      const f = k / Math.max(1, c.links - 1);
+                      // The sway increases down the chain — a pendulum, not a
+                      // rigid rotation.
+                      const dx = swing * f * f;
+                      return (
+                        <circle
+                          key={k}
+                          cx={c.x + dx}
+                          cy={c.yTop + 12 + f * c.len}
+                          r={3.4}
+                          fill="none"
+                          stroke={PLATE.goldBright}
+                          strokeWidth={1.5}
+                          opacity={0.9}
+                        />
+                      );
+                    })}
+                    {/* The leaf-shaped terminal. */}
+                    <path
+                      d={`M ${c.x + swing} ${c.yTop + 12 + c.len} l -7 10 l 7 15 l 7 -15 Z`}
+                      fill={PLATE.goldBright}
+                      opacity={0.75 * clamp01((ct - 0.7) / 0.3)}
+                    />
+                  </g>
+                );
+              })}
+            </g>
+          ) : (
+            <g>
+              {geo.hoardShapes.map((h, i) => {
+                const ht = stagger(tObject, i, geo.hoardShapes.length, 0.03, 0.28);
+                if (ht <= 0.02) return null;
+                const s = settle(ht, 0.14);
+                return (
+                  <g key={i} opacity={clamp01(ht * 1.5)} transform={`translate(0, ${((1 - s) * -18).toFixed(1)})`}>
+                    <HatchField
+                      strokes={h.tone}
+                      t={ht}
+                      color={PLATE.gold}
+                      alpha={0.75}
+                      passes={4}
+                      modulate={() => metal(h.x / W)}
+                    />
+                    <InkPath d={h.ring.d} len={h.ring.len} t={ht} color={PLATE.goldBright} width={1.8} opacity={0.9} />
+                  </g>
+                );
+              })}
+            </g>
+          )}
+
+          {/* Scale bar — the catalogue's claim to objectivity. */}
+          <g opacity={tCaption}>
+            <InkPath d={geo.scaleBar.d} len={geo.scaleBar.len} t={tCaption} color={PLATE.cut} width={1.6} opacity={0.7} />
+            <path
+              d={`M ${CX - 130} 698 L ${CX - 130} 714 M ${CX} 700 L ${CX} 712 M ${CX + 130} 698 L ${CX + 130} 714`}
+              stroke={PLATE.cut} strokeWidth={1.4} opacity={0.7}
+            />
+            <text
+              x={CX} y={738} textAnchor="middle" fill={PLATE.cutDim}
+              style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: 16, letterSpacing: 2.4 }}
+            >
+              10 CM
+            </text>
+          </g>
+        </svg>
+      </AbsoluteFill>
+
+      <PlateCaption
+        x={0}
+        y={772}
+        width={W}
+        align="center"
+        title={label}
+        sub="From the plates published by H. Schliemann"
+        t={tCaption}
+        scale={0.86}
       />
-      <svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{ position: 'absolute', inset: 0 }}>
-        <defs>
-          <linearGradient id={GOLD_ID_GRAD} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={PALETTE.goldBright} />
-            <stop offset="55%" stopColor={PALETTE.gold} />
-            <stop offset="100%" stopColor={PALETTE.bronze} />
-          </linearGradient>
-          <linearGradient id={GOLD_ID_GRAD_SOFT} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={PALETTE.gold} />
-            <stop offset="100%" stopColor="#6b4d24" />
-          </linearGradient>
-          <radialGradient id="plateRim" cx="50%" cy="42%" r="60%">
-            <stop offset="0%" stopColor="rgba(255,224,170,0.09)" />
-            <stop offset="80%" stopColor="rgba(0,0,0,0)" />
-          </radialGradient>
-          <clipPath id="plateClip">
-            <circle cx={ringCX} cy={ringCY} r={plateR} />
-          </clipPath>
-        </defs>
-
-        {/* Plate rim rings. */}
-        <circle cx={ringCX} cy={ringCY} r={plateR} fill="url(#plateRim)" />
-        <circle cx={ringCX} cy={ringCY} r={plateR} fill="none" stroke="#3a2a16" strokeWidth={2} opacity={0.5} />
-        <circle cx={ringCX} cy={ringCY} r={plateR - 16} fill="none" stroke="#2a1c0e" strokeWidth={1} opacity={0.35} />
-
-        {/* Artifact group: gentle continuous drift + progress-driven build-in. */}
-        <g
-          transform={`translate(${originX} ${originY + bob}) rotate(${rotate}) scale(${scale * microScale * fitScale})`}
-          opacity={opacity}
-        >
-          {artifact === 'diadem' && <Diadem rng={rng} progress={progress} />}
-          {artifact === 'cup' && <Cup rng={rng} progress={progress} />}
-          {artifact === 'hoard' && <Hoard rng={rng} progress={progress} />}
-          {artifact === 'sherd' && <Sherd rng={rng} progress={progress} />}
-        </g>
-
-        {/* Travelling specular highlight, clipped to the plate. */}
-        <g clipPath="url(#plateClip)" opacity={0.28 * revealIn}>
-          <rect
-            x={ringCX - plateR + plateR * 2.6 * sweepT - plateR * 1.3}
-            y={ringCY - plateR}
-            width={plateR * 0.7}
-            height={plateR * 2}
-            fill="url(#plateRim)"
-            style={{ mixBlendMode: 'screen' }}
-            transform={`skewX(-18)`}
-          />
-        </g>
-
-        {/* Dust motes drifting across, in front of the artifact. */}
-        <g clipPath="url(#plateClip)">
-          {dustMotes.map((m, i) => {
-            const travel = t * m.speed;
-            const x = ringCX + m.x + Math.cos(m.angle) * travel * 0.15 + Math.sin((t * TAU) / 6 + m.phase) * 14;
-            const y = ringCY + m.y + Math.sin(m.angle) * travel * 0.15 + Math.cos((t * TAU) / 7 + m.phase) * 10;
-            const op = 0.22 + 0.15 * Math.sin((t * TAU) / 4 + m.phase);
-            return <circle key={i} cx={x} cy={y} r={m.r} fill={PALETTE.bone} opacity={Math.max(0, op) * revealIn} />;
-          })}
-        </g>
-
-        {/* Catalogue label — fixed, safe position, drawing in early so it
-            reads on shots of any length. */}
-        <g opacity={0.75 * clamp(labelDraw, 0, 1)}>
-          <line
-            x1={960 - 110}
-            y1={labelY - 22}
-            x2={960 - 110 + 220 * clamp(labelDraw, 0, 1)}
-            y2={labelY - 22}
-            stroke={PALETTE.ash}
-            strokeWidth={1}
-          />
-          <text
-            x={960}
-            y={labelY}
-            textAnchor="middle"
-            fill={PALETTE.bone}
-            fontFamily='"Inter", sans-serif'
-            fontWeight={500}
-            fontSize={22}
-            letterSpacing={2.8}
-          >
-            {label.toUpperCase()}
-          </text>
-        </g>
-      </svg>
-
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(ellipse 68% 62% at 50% 42%, rgba(0,0,0,0) 48%, rgba(0,0,0,0.78) 100%)',
-          pointerEvents: 'none',
-        }}
-      />
-    </AbsoluteFill>
+    </Plate>
   );
 };
-
-export default ArtifactPlate;

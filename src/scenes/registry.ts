@@ -10,6 +10,7 @@ import { ClaimLedger } from './ClaimLedger';
 import { ExcavationField } from './ExcavationField';
 import { StatementCard } from './StatementCard';
 import { ArtifactPlate } from './ArtifactPlate';
+import { LampInterior } from './LampInterior';
 
 export type SceneAssignment = {
   Component: React.FC<SceneProps>;
@@ -49,7 +50,9 @@ export const SCENE_BY_SHOT: Record<string, SceneAssignment> = {
   'hook-title': { Component: ExcavationField, options: { mood: 'fire', intensity: 0.8 } },
 
   // --- The obsession ------------------------------------------------------
-  'obsession-book': { Component: ExcavationField, options: { mood: 'candle', intensity: 0.4 } },
+  // A wide landscape was the wrong picture for a boy reading Homer by one
+  // candle; this beat is an interior, so it gets the nocturne plate.
+  'obsession-book': { Component: LampInterior, options: { subject: 'book', intensity: 0.75 } },
   'obsession-letters': { Component: ClaimLedger },
   'obsession-merchant': { Component: ExcavationField, options: { mood: 'dusk' } },
   'obsession-homer': {
@@ -74,7 +77,7 @@ export const SCENE_BY_SHOT: Record<string, SceneAssignment> = {
     Component: ArtifactPlate,
     options: { artifact: 'diadem', label: 'GOLD DIADEM · TROY II' },
   },
-  'treasure-shawl': { Component: ExcavationField, options: { mood: 'night' } },
+  'treasure-shawl': { Component: LampInterior, options: { subject: 'bundle', intensity: 0.85 } },
   'treasure-sophia': {
     Component: ClaimLedger,
     options: {
@@ -84,7 +87,7 @@ export const SCENE_BY_SHOT: Record<string, SceneAssignment> = {
       ],
     },
   },
-  'treasure-smuggle': { Component: ExcavationField, options: { mood: 'night', intensity: 0.6 } },
+  'treasure-smuggle': { Component: LampInterior, options: { subject: 'crates', intensity: 0.6 } },
   // The scene the whole section turns on: Troy II predates the war by over a
   // thousand years, so the gold cannot have been Priam's.
   'treasure-date': {

@@ -1,460 +1,385 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
-import '@fontsource/inter/500.css';
-import '@fontsource/inter/600.css';
 import type { SceneProps } from './types';
-import { SAFE_AREA, PALETTE } from './types';
+import {
+  Plate, PLATE, HatchField, StippleField, InkPath, PlateCaption,
+  hatch, hatchContours, stipple, flicks, contour, segment, wobblyRect,
+  rngFor, makeFbm1D, lerp, clamp01, clamp,
+  onNs, rakingLight, ramp, stagger, pulse, anticipate,
+  easeOutCubic, easeInOutCubic, easeOutQuint,
+} from './engraving';
 
 /**
- * GreatTrench — Schliemann's Great Trench: a hard vertical gash cut straight
- * down through the mound at Hisarlik, slicing through the strata with
- * almost no record of what was destroyed. This is the most kinetic of the
- * three scenes: the cut visibly drives downward through the mound across
- * the whole shot, spoil tumbles and dust plumes rise as it passes each
- * layer, and the severed layer edges shear into view on both cut walls the
- * instant the blade of the cut reaches them.
+ * GreatTrench — the cut of 1871–73, driven straight down through the middle of
+ * the mound and through everything in it.
+ *
+ * The whole shot is one action: the trench eats downward. Crucially it does
+ * NOT ease smoothly from top to bottom — it goes in BITES, four of them, each
+ * one dropping fast and then holding dead still while debris settles. That
+ * held beat between bites is the difference between an animation that reads as
+ * a machine wipe and one that reads as men with picks.
+ *
+ * Anticipation: before each bite the whole plate pulls up a couple of pixels.
+ * Overlapping action: the spoil thrown out of the cut lags the cut itself by
+ * several frames, and the depth marker in the margin trails both.
  */
 
-function mulberry32(seed: number) {
-  let a = (seed >>> 0) || 1;
-  return function rand() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+const W = 1920;
+const H = 1080;
 
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
-const easeInCubic = (t: number) => Math.pow(clamp01(t), 3);
-const easeOutQuad = (t: number) => 1 - (1 - clamp01(t)) * (1 - clamp01(t));
-const easeInOutCubic = (t: number) => {
-  const x = clamp01(t);
-  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
-};
+const GROUND = 250;
+const FLOOR = 830;
+const TRENCH_X = 700;
+const TRENCH_W = 470;
 
-// Mound geometry (composition px, 1920x1080).
-const BASE_Y = 924;
-const TOP_Y = 236;
-const BASE_L = 190;
-const BASE_R = 1730;
-const TOP_L = 560;
-const TOP_R = 1360;
-const CX = (TOP_L + TOP_R) / 2; // trench centre x
-const CUT_START_Y = TOP_Y - 14;
-const CUT_END_Y = BASE_Y + 90;
-
-const TRENCH_MAX_W = 168;
-// The cut's leading edge advances continuously across most of the shot —
-// this is the scene's primary, whole-duration motion.
-const CUT_DEPTH_START = 0.05;
-const CUT_DEPTH_END = 0.92;
-
-type StratumDef = { top: number; bottom: number; colorTop: string; colorBottom: string; texture: 'earth' | 'stone' | 'ash' };
-
-// Six generic strata bands, oldest (bottom) to most recent (top) — this
-// scene isn't about labelling every city, just showing depth being cut.
-const STRATA: StratumDef[] = [
-  { top: 0, bottom: 0, colorTop: '#3c2619', colorBottom: '#22130a', texture: 'earth' }, // filled below
-  { top: 0, bottom: 0, colorTop: '#4d3018', colorBottom: '#2c1a0c', texture: 'earth' },
-  { top: 0, bottom: 0, colorTop: '#3d2b1b', colorBottom: '#28190f', texture: 'earth' },
-  { top: 0, bottom: 0, colorTop: '#524a38', colorBottom: '#332e22', texture: 'stone' },
-  { top: 0, bottom: 0, colorTop: '#2a1c16', colorBottom: '#160f0a', texture: 'ash' },
-  { top: 0, bottom: 0, colorTop: '#564d3a', colorBottom: '#352f21', texture: 'stone' },
+/** The layers the cut goes through, top (recent) to bottom (oldest). */
+const BANDS = [
+  { id: 'IX',   frac: 0.10, texture: 'masonry' as const },
+  { id: 'VIII', frac: 0.10, texture: 'masonry' as const },
+  { id: 'VIIb', frac: 0.06, texture: 'rubble' as const },
+  { id: 'VIIa', frac: 0.05, texture: 'burnt' as const },
+  { id: 'VI',   frac: 0.17, texture: 'masonry' as const },
+  { id: 'V',    frac: 0.08, texture: 'silt' as const },
+  { id: 'IV',   frac: 0.10, texture: 'fill' as const },
+  { id: 'III',  frac: 0.08, texture: 'rubble' as const },
+  { id: 'II',   frac: 0.14, texture: 'gold' as const },
+  { id: 'I',    frac: 0.12, texture: 'fill' as const },
 ];
-const WEIGHTS = [1.2, 1.0, 0.7, 1.3, 0.35, 1.0];
-const TOTAL_W = WEIGHTS.reduce((s, w) => s + w, 0);
 
-function widthAt(y: number) {
-  // Linear interpolation of mound half-width between base and top.
-  const t = clamp01((BASE_Y - y) / (BASE_Y - TOP_Y));
-  const halfBase = (BASE_R - BASE_L) / 2;
-  const halfTop = (TOP_R - TOP_L) / 2;
-  return lerp(halfBase, halfTop, t);
-}
+export const GreatTrench: React.FC<SceneProps> = ({ progress, frame, fps, seed }) => {
+  const geo = useMemo(() => {
+    const rand = rngFor(seed, 'trench');
+    const fbm = makeFbm1D(seed, 'trenchf');
 
-// The cut's leading-edge depth as a function of progress — used both for
-// rendering the current cut and for scheduling events (dust, boundary
-// shears) that reference "when did the blade reach this y".
-function depthTAt(p: number) {
-  return clamp01((p - CUT_DEPTH_START) / (CUT_DEPTH_END - CUT_DEPTH_START));
-}
-function cutDepthYAt(p: number) {
-  return lerp(CUT_START_Y, CUT_END_Y, easeInOutCubic(depthTAt(p)));
-}
-function trenchWidthAt(p: number) {
-  return TRENCH_MAX_W * easeOutCubic(clamp01(p / 0.45));
-}
+    const total = FLOOR - GROUND;
+    let cursor = GROUND;
+    const bands = BANDS.map((b, i) => {
+      const h = b.frac * total;
+      const topY = cursor;
+      cursor += h;
 
-type GreatTrenchOptions = {
-  caption?: boolean;
-};
+      const region = { x: -60, y: topY, w: W + 120, h: Math.max(4, h) };
+      let marks: ReturnType<typeof hatch> = [];
+      let dots: ReturnType<typeof stipple> = [];
 
-export const GreatTrench: React.FC<SceneProps> = ({ progress, seed, options }) => {
-  const opts = (options ?? {}) as GreatTrenchOptions;
-  const showCaption = opts.caption !== false;
-  const seedInt = Math.floor(seed * 1e9) + 1;
-
-  // Precompute strata band extents.
-  const bands = useMemo(() => {
-    let cursor = BASE_Y;
-    return STRATA.map((s, i) => {
-      const h = (WEIGHTS[i] / TOTAL_W) * (BASE_Y - TOP_Y);
-      const bottom = cursor;
-      const top = cursor - h;
-      cursor = top;
-      return { ...s, top, bottom, h };
-    });
-  }, []);
-
-  const boundaryYs = useMemo(() => bands.slice(1).map((b) => b.top), [bands]);
-  // The progress value at which the advancing cut reaches each boundary.
-  const boundaryProgress = useMemo(
-    () =>
-      boundaryYs.map((y) => {
-        const dT = clamp01((y - CUT_START_Y) / (CUT_END_Y - CUT_START_Y));
-        return CUT_DEPTH_START + dT * (CUT_DEPTH_END - CUT_DEPTH_START);
-      }),
-    [boundaryYs]
-  );
-
-  // Mound sides drawn as gently organic (not perfectly straight) via a
-  // handful of seeded control points.
-  const moundPath = useMemo(() => {
-    const rand = mulberry32(seedInt + 11);
-    const jig = () => (rand() - 0.5) * 10;
-    return `M ${BASE_L},${BASE_Y}
-      C ${BASE_L + 40 + jig()},${lerp(BASE_Y, TOP_Y, 0.4) + jig()} ${TOP_L - 90 + jig()},${TOP_Y + 60 + jig()} ${TOP_L},${TOP_Y}
-      L ${TOP_R},${TOP_Y}
-      C ${TOP_R + 90 + jig()},${TOP_Y + 60 + jig()} ${BASE_R - 40 + jig()},${lerp(BASE_Y, TOP_Y, 0.4) + jig()} ${BASE_R},${BASE_Y}
-      Z`;
-  }, [seedInt]);
-
-  const speckles = useMemo(() => {
-    return bands.map((b, i) => {
-      const rand = mulberry32(seedInt + 300 + i * 61);
-      const count = Math.round(10 + WEIGHTS[i] * 12);
-      const items: { x: number; y: number; r: number; c: string; op: number }[] = [];
-      for (let k = 0; k < count; k++) {
-        const y = b.top + rand() * b.h;
-        const hw = widthAt(y);
-        const x = CX + (rand() - 0.5) * 2 * (hw - 20);
-        const isEmber = b.texture === 'ash' && rand() < 0.2;
-        items.push({
-          x,
-          y,
-          r: isEmber ? 2 + rand() * 2 : 1 + rand() * 2.2,
-          c: isEmber ? PALETTE.ember : rand() > 0.5 ? '#00000040' : '#ffffff12',
-          op: isEmber ? 0.85 : 0.35 + rand() * 0.35,
+      if (b.texture === 'masonry') {
+        marks = hatch(seed, `t-mas${i}`, {
+          ...region, angle: 0, pitch: Math.max(9, h / 3), amp: 1.2, coverage: 0.86,
+          jitter: 0.4, width: 1.1, samples: 12,
+          density: (u) => clamp01(0.45 + fbm(u * 5 + i * 3) * 0.7),
         });
+      } else if (b.texture === 'burnt') {
+        marks = flicks(seed, `t-burnt${i}`, {
+          ...region, count: 300, length: 15,
+          angleAt: (u, v) => -55 + fbm(u * 8 + v * 3) * 110,
+        });
+        dots = stipple(seed, `t-burntd${i}`, { ...region, count: 340, minR: 0.6, maxR: 2.5 });
+      } else if (b.texture === 'silt') {
+        marks = hatch(seed, `t-silt${i}`, {
+          ...region, angle: 0, pitch: 5, amp: 1.3, coverage: 0.94, jitter: 0.2,
+          width: 0.8, samples: 12, density: () => 0.85,
+        });
+      } else if (b.texture === 'gold') {
+        marks = hatch(seed, `t-gold${i}`, {
+          ...region, angle: 14, pitch: 10, amp: 1.2, coverage: 0.7, jitter: 0.6,
+          width: 1.0, samples: 8, density: (u) => clamp01(0.5 + fbm(u * 6 + i) * 0.7),
+        });
+        dots = stipple(seed, `t-goldd${i}`, { ...region, count: 200, minR: 0.7, maxR: 2.9 });
+      } else if (b.texture === 'rubble') {
+        marks = hatch(seed, `t-rub${i}`, {
+          ...region, angle: 48, pitch: 11, amp: 1.7, coverage: 0.44, jitter: 1.3,
+          width: 1.05, samples: 5, density: (u, v) => clamp01(0.4 + fbm(u * 7 + v * 2 + i) * 0.8),
+        });
+        dots = stipple(seed, `t-rubd${i}`, { ...region, count: 240, minR: 0.6, maxR: 2.4 });
+      } else {
+        marks = hatch(seed, `t-fill${i}`, {
+          ...region, angle: 32, pitch: 13, amp: 1.5, coverage: 0.52, jitter: 1.1,
+          width: 0.95, samples: 6, density: (u, v) => clamp01(0.42 + fbm(u * 6 + v + i * 2) * 0.8),
+        });
+        dots = stipple(seed, `t-filld${i}`, { ...region, count: 260, minR: 0.5, maxR: 2.2 });
       }
-      return items;
+
+      const ifacePts: { x: number; y: number }[] = [];
+      for (let k = 0; k <= 44; k++) {
+        const u = k / 44;
+        ifacePts.push({ x: -60 + u * (W + 120), y: topY + fbm(u * 5 + i * 13) * 7 });
+      }
+
+      return {
+        ...b, topY, h, marks, dots,
+        iface: contour(seed, `t-if${i}`, ifacePts, 1.3, 140),
+      };
     });
-  }, [bands, seedInt]);
 
-  // --- Trench opening (continuous through most of the shot) -----------
-  const depthT = depthTAt(progress);
-  const cutDepthY = cutDepthYAt(progress);
-  const trenchW = trenchWidthAt(progress);
-  const trenchL = CX - trenchW / 2;
-  const trenchR = CX + trenchW / 2;
-
-  // Guide line before the cut begins.
-  const guideOpacity = 0.5 * (1 - easeOutCubic(progress / CUT_DEPTH_START));
-
-  // Boundary "shear" pulses — a brief flash + jolt exactly as the advancing
-  // blade reaches each layer boundary. Cheap: a handful of gaussian bumps
-  // evaluated per frame.
-  const shears = useMemo(
-    () =>
-      boundaryProgress.map((bp, i) => {
-        const rand = mulberry32(seedInt + 40000 + i * 17);
-        return { bp, jx: (rand() - 0.5) * 5, jy: (rand() - 0.5) * 3 };
-      }),
-    [boundaryProgress, seedInt]
-  );
-  const shearIntensities = shears.map((s) => {
-    const d = (progress - s.bp) / 0.03;
-    return Math.exp(-(d * d));
-  });
-  const totalShake = shears.reduce(
-    (acc, s, i) => {
-      const inten = shearIntensities[i];
-      return { x: acc.x + s.jx * inten, y: acc.y + s.jy * inten };
-    },
-    { x: 0, y: 0 }
-  );
-
-  // Subtle continuous camera creep, alive for the whole shot, plus the
-  // boundary-shear shake layered on top.
-  const camScale = 1 + 0.022 * progress;
-  const camY = -10 * progress + totalShake.y;
-  const camX = totalShake.x;
-  const sceneTransform = `translate(${camX}px, ${camY}px) scale(${camScale})`;
-  const sceneTransformOrigin = `${CX}px ${(TOP_Y + BASE_Y) / 2}px`;
-
-  // --- Falling rubble, spread across the whole cutting window ----------
-  const chunks = useMemo(() => {
-    const rand = mulberry32(seedInt + 7000);
-    const n = 26;
-    return Array.from({ length: n }).map(() => {
-      const startP = CUT_DEPTH_START + rand() * (CUT_DEPTH_END - CUT_DEPTH_START - 0.1);
-      const originY = cutDepthYAt(startP) - rand() * 30;
-      const side = rand() > 0.5 ? 1 : -1;
-      const w = 10 + rand() * 22;
-      const h = 8 + rand() * 16;
-      const spread = 40 + rand() * 260;
-      const fallDist = 380 + rand() * 420;
-      const rot = (rand() - 0.5) * 90;
-      const fallDur = 0.16 + rand() * 0.16;
-      const bandIdx = Math.floor(rand() * bands.length);
-      return { startP, originY, side, w, h, spread, fallDist, rot, fallDur, color: bands[bandIdx].colorTop };
-    });
-  }, [bands, seedInt]);
-
-  // --- Dust plumes rising from the advancing cut ------------------------
-  const plumes = useMemo(() => {
-    const rand = mulberry32(seedInt + 8500);
-    const n = 20;
-    return Array.from({ length: n }).map(() => {
-      const spawnP = CUT_DEPTH_START + rand() * (CUT_DEPTH_END - CUT_DEPTH_START);
-      const originY = cutDepthYAt(spawnP);
-      const wAtSpawn = trenchWidthAt(spawnP);
-      const originX = CX + (rand() - 0.5) * wAtSpawn * 0.7;
-      const life = 0.1 + rand() * 0.09;
-      const rise = 70 + rand() * 90;
-      const drift = (rand() - 0.5) * 50;
-      const maxR = 26 + rand() * 30;
-      return { spawnP, originX, originY, life, rise, drift, maxR };
-    });
-  }, [seedInt]);
-
-  // --- Spoil heaps (accumulated rubble at the base, either side) -----
-  const spoilChunks = useMemo(() => {
-    const rand = mulberry32(seedInt + 9000);
-    const makeHeap = (cx: number, dir: number) =>
-      Array.from({ length: 20 }).map(() => {
-        const spread = rand();
-        const x = cx + dir * spread * 170;
-        const heightAtX = 70 * (1 - spread * 0.7);
-        const y = BASE_Y + 8 - rand() * heightAtX;
-        const w = 12 + rand() * 26;
-        const h = 8 + rand() * 14;
-        const shade = rand() > 0.5 ? '#3c2619' : '#2c1a0c';
-        return { x, y, w, h, shade };
+    // The ground surface — the mound's crown, gently domed.
+    const surfacePts: { x: number; y: number }[] = [];
+    for (let k = 0; k <= 60; k++) {
+      const u = k / 60;
+      surfacePts.push({
+        x: -60 + u * (W + 120),
+        y: GROUND - Math.exp(-Math.pow((u - 0.5) / 0.44, 2)) * 66 + fbm(u * 6 + 3) * 10,
       });
-    return [...makeHeap(BASE_L - 30, -1), ...makeHeap(BASE_R + 30, 1)];
-  }, [seedInt]);
-  const spoilT = easeOutCubic(depthT);
+    }
+    const surface = contour(seed, 'surf', surfacePts, 1.6, 180);
+    const surfaceTopAt = (px: number) => {
+      const u = clamp01((px + 60) / (W + 120));
+      return surfacePts[clamp(Math.round(u * 60), 0, 60)].y;
+    };
 
-  // --- Small figures for scale, standing at the trench floor, with a
-  // faint idle bob once the cut has reached the base. -------------------
-  const figures = useMemo(() => {
-    const rand = mulberry32(seedInt + 12000);
-    return Array.from({ length: 2 }).map(() => ({
-      x: CX + (rand() - 0.5) * (TRENCH_MAX_W - 40),
-      lean: (rand() - 0.5) * 6,
-      bobPhase: rand(),
+    // Sky above the mound.
+    const sky = hatch(seed, 'tsky', {
+      x: -60, y: 20, w: W + 120, h: 190,
+      angle: 0, pitch: 14, amp: 2.2, coverage: 0.62, jitter: 0.9, width: 0.85, samples: 9,
+      density: (u, v) => clamp01(Math.pow(v, 2.2) * 1.2 - 0.05),
+    });
+
+    // Spoil thrown out of the cut: each clod has its own arc and spin.
+    const spoil = Array.from({ length: 54 }, (_, i) => ({
+      k: i / 54,
+      side: rand() < 0.5 ? -1 : 1,
+      born: rand(),
+      vx: 130 + rand() * 340,
+      vy: -(180 + rand() * 260),
+      size: 3 + rand() * 9,
+      spin: (rand() - 0.5) * 700,
+      life: 0.9 + rand() * 0.7,
     }));
-  }, [seedInt]);
-  const figuresOpacity = easeOutCubic((depthT - 0.78) / 0.18) * 0.55;
+
+    return { bands, surface, surfaceTopAt, sky, spoil };
+  }, [seed]);
+
+  const p = clamp01(progress);
+
+  // --- the bites ----------------------------------------------------------
+  // Four discrete digging campaigns. Each drops fast (easeOutQuint over a
+  // short window) then holds. The sum reaches 1 at p ≈ 0.86, leaving a beat at
+  // the bottom of the cut before the shot ends.
+  const BITES = [
+    { at: 0.16, dur: 0.075, amount: 0.30 },
+    { at: 0.36, dur: 0.070, amount: 0.26 },
+    { at: 0.56, dur: 0.065, amount: 0.24 },
+    { at: 0.76, dur: 0.075, amount: 0.20 },
+  ];
+  let cut = 0;
+  let biteVel = 0;
+  for (const b of BITES) {
+    cut += easeOutQuint(ramp(p, b.at, b.at + b.dur)) * b.amount;
+    // How hard this bite is moving right now — drives the dust and the shake.
+    const inBite = ramp(p, b.at, b.at + b.dur);
+    if (inBite > 0 && inBite < 1) biteVel = Math.max(biteVel, Math.sin(inBite * Math.PI));
+  }
+  cut = clamp01(cut);
+
+  // Anticipation: the plate lifts a little just before each bite lands.
+  let antic = 0;
+  for (const b of BITES) {
+    const pre = ramp(p, b.at - 0.05, b.at);
+    antic += pre * (1 - ramp(p, b.at, b.at + 0.02)) * 3.2;
+  }
+
+  const cutDepth = GROUND + cut * (FLOOR - GROUND);
+
+  // Camera: pushes in on the cut, and drops with it — but in its own rhythm,
+  // slightly behind the digging, which is the overlapping action.
+  const follow = easeInOutCubic(ramp(p, 0.12, 0.94));
+  const camScale = 1.0 + follow * 0.16;
+  const camY = -follow * 60 - antic;
+  const camX = lerp(30, -18, easeInOutCubic(ramp(p, 0.0, 1.0)));
+
+  const t = frame / fps;
+  const sweep = rakingLight(frame, fps, 25, seed);
+  const litness = (u: number) => 1 + 0.5 * Math.exp(-Math.pow((u - lerp(-0.2, 1.2, sweep)) / 0.24, 2));
+
+  const tGround = ramp(p, 0.0, 0.14);
+  const tBands = ramp(p, 0.04, 0.4);
+
+  const id = Math.round(seed * 1e6);
+
+  // Wobble on the trench walls, so the cut is hacked rather than milled.
+  const wallJitter = (y: number) => Math.sin(y * 0.031 + seed * 31) * 7 + Math.sin(y * 0.083 + 2) * 3;
+
+  const leftWall =
+    `M ${TRENCH_X} ${GROUND - 90} ` +
+    Array.from({ length: 26 }, (_, i) => {
+      const y = GROUND - 90 + ((cutDepth + 30 - (GROUND - 90)) * i) / 25;
+      return `L ${(TRENCH_X + wallJitter(y)).toFixed(1)} ${y.toFixed(1)}`;
+    }).join(' ');
+  const rightWall =
+    `M ${TRENCH_X + TRENCH_W} ${GROUND - 90} ` +
+    Array.from({ length: 26 }, (_, i) => {
+      const y = GROUND - 90 + ((cutDepth + 30 - (GROUND - 90)) * i) / 25;
+      return `L ${(TRENCH_X + TRENCH_W - wallJitter(y + 40)).toFixed(1)} ${y.toFixed(1)}`;
+    }).join(' ');
+
+  // The closed void the cut has opened: down the left wall, across the floor,
+  // back up the right wall.
+  const voidPath =
+    leftWall +
+    ` L ${(TRENCH_X + TRENCH_W - wallJitter(cutDepth + 40)).toFixed(1)} ${(cutDepth + 30).toFixed(1)} ` +
+    Array.from({ length: 26 }, (_, i) => {
+      const y = cutDepth + 30 - ((cutDepth + 30 - (GROUND - 90)) * i) / 25;
+      return `L ${(TRENCH_X + TRENCH_W - wallJitter(y + 40)).toFixed(1)} ${y.toFixed(1)}`;
+    }).join(' ') +
+    ' Z';
 
   return (
-    <AbsoluteFill style={{ backgroundColor: PALETTE.ink, overflow: 'hidden' }}>
+    <Plate seed={seed} frame={frame} fps={fps} tone="warm" lightPeriodSec={25} lightStrength={0.9}>
       <AbsoluteFill
         style={{
-          background: `radial-gradient(ellipse 1100px 700px at ${CX}px 560px, ${PALETTE.soilWarm}44 0%, transparent 72%)`,
+          transform: `translate(${camX.toFixed(2)}px, ${camY.toFixed(2)}px) scale(${camScale.toFixed(4)})`,
+          transformOrigin: '50% 46%',
         }}
-      />
-
-      <svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{ position: 'absolute', inset: 0 }}>
-        <defs>
-          <clipPath id="moundClip">
-            <path d={moundPath} />
-          </clipPath>
-          <linearGradient id="trenchShadow" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#000000" stopOpacity={0.55} />
-            <stop offset="55%" stopColor="#000000" stopOpacity={0.85} />
-            <stop offset="100%" stopColor="#000000" stopOpacity={0.98} />
-          </linearGradient>
-          <linearGradient id="trenchWallL" x1="1" y1="0" x2="0" y2="0">
-            <stop offset="0%" stopColor="#000000" stopOpacity={0} />
-            <stop offset="100%" stopColor="#000000" stopOpacity={0.5} />
-          </linearGradient>
-          <linearGradient id="trenchWallR" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#000000" stopOpacity={0} />
-            <stop offset="100%" stopColor="#000000" stopOpacity={0.5} />
-          </linearGradient>
-          <linearGradient id="groundFadeTrench" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={PALETTE.ink} stopOpacity={0} />
-            <stop offset="100%" stopColor={PALETTE.ink} stopOpacity={1} />
-          </linearGradient>
-          <radialGradient id="puffGrad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor={PALETTE.bone} stopOpacity={0.55} />
-            <stop offset="60%" stopColor={PALETTE.bone} stopOpacity={0.18} />
-            <stop offset="100%" stopColor={PALETTE.bone} stopOpacity={0} />
-          </radialGradient>
-        </defs>
-
-        <g style={{ transform: sceneTransform, transformOrigin: sceneTransformOrigin }}>
-          {/* Mound body */}
-          <g clipPath="url(#moundClip)">
-            {bands.map((b, i) => (
-              <rect key={i} x={0} y={b.top} width={1920} height={b.h + 1} fill={b.colorTop} />
-            ))}
-            {bands.map((b, i) => (
-              <rect
-                key={`shade-${i}`}
-                x={0}
-                y={b.top}
-                width={1920}
-                height={b.h + 1}
-                fill={b.colorBottom}
-                opacity={0.35}
+      >
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+          <defs>
+            {/* The section, minus whatever the cut has removed so far. */}
+            <clipPath id={`ground-${id}`}>
+              <path
+                d={`M -80 ${H + 60} L -80 ${GROUND - 130} L ${W + 80} ${GROUND - 130} L ${W + 80} ${H + 60} Z`}
               />
-            ))}
-            {speckles.map((arr, i) =>
-              arr.map((s, si) => <circle key={`${i}-${si}`} cx={s.x} cy={s.y} r={s.r} fill={s.c} opacity={s.op} />)
-            )}
-            {boundaryYs.map((y, i) => (
-              <line key={i} x1={CX - widthAt(y)} y1={y} x2={CX + widthAt(y)} y2={y} stroke={PALETTE.bone} strokeOpacity={0.12} strokeWidth={1} />
-            ))}
+            </clipPath>
+            <mask id={`cutmask-${id}`}>
+              <rect x={-80} y={-80} width={W + 160} height={H + 160} fill="#fff" />
+              {/* The void the trench has opened. */}
+              <path d={voidPath} fill="#000" />
+            </mask>
+          </defs>
 
-            {/* The cut itself — its depth advances continuously with
-                progress, clipped to the mound silhouette. */}
-            {trenchW > 0.5 && cutDepthY > CUT_START_Y && (
-              <>
-                <rect x={trenchL} y={CUT_START_Y} width={trenchW} height={Math.min(cutDepthY, BASE_Y + 260) - CUT_START_Y} fill="url(#trenchShadow)" />
-                <rect x={trenchL} y={CUT_START_Y} width={Math.min(24, trenchW / 2)} height={cutDepthY - CUT_START_Y} fill="url(#trenchWallL)" />
-                <rect x={trenchR - Math.min(24, trenchW / 2)} y={CUT_START_Y} width={Math.min(24, trenchW / 2)} height={cutDepthY - CUT_START_Y} fill="url(#trenchWallR)" />
-              </>
-            )}
-          </g>
+          {/* Sky. */}
+          <HatchField strokes={geo.sky} t={tGround} color={PLATE.cut} alpha={0.34} passes={5} modulate={(s) => litness(s.k)} />
 
-          {/* Mound outline */}
-          <path d={moundPath} fill="none" stroke={PALETTE.ash} strokeOpacity={0.3} strokeWidth={1.2} />
-
-          {/* Severed layer edges — shear into view exactly as the blade
-              passes, then remain as the visible scar. */}
-          {boundaryYs.map((y, i) => {
-            if (y < CUT_START_Y || y > BASE_Y) return null;
-            const revealAmt = clamp01((progress - boundaryProgress[i]) / 0.015 + 0.5);
-            const flash = shearIntensities[i];
-            if (revealAmt <= 0.02 && flash <= 0.02) return null;
-            return (
-              <g key={`sever-${i}`}>
-                <line x1={trenchL - 12 - flash * 6} y1={y} x2={trenchL} y2={y} stroke={PALETTE.goldBright} strokeOpacity={0.4 * revealAmt + flash * 0.5} strokeWidth={1.5 + flash * 1.5} />
-                <line x1={trenchR} y1={y} x2={trenchR + 12 + flash * 6} y2={y} stroke={PALETTE.goldBright} strokeOpacity={0.4 * revealAmt + flash * 0.5} strokeWidth={1.5 + flash * 1.5} />
-                {flash > 0.05 && (
-                  <rect x={trenchL} y={y - 3} width={trenchW} height={6} fill={PALETTE.goldBright} opacity={flash * 0.35} />
-                )}
-              </g>
-            );
-          })}
-
-          {/* Guide line before the cut opens */}
-          {guideOpacity > 0.01 && (
-            <line x1={CX} y1={TOP_Y - 10} x2={CX} y2={BASE_Y + 10} stroke={PALETTE.gold} strokeOpacity={guideOpacity} strokeWidth={1.5} strokeDasharray="4 8" />
-          )}
-
-          {/* Falling rubble */}
-          {chunks.map((c, i) => {
-            const age = clamp01((progress - c.startP) / c.fallDur);
-            if (age <= 0) return null;
-            const fall = easeInCubic(age);
-            const y = c.originY + fall * c.fallDist;
-            const x = CX + c.side * c.spread * easeOutQuad(age) * 0.6 + c.side * 20;
-            if (y > BASE_Y + 40) return null;
-            const opacity = age > 0.72 ? lerp(0.8, 0, (age - 0.72) / 0.28) : 0.8;
-            return (
-              <rect
-                key={i}
-                x={x - c.w / 2}
-                y={y - c.h / 2}
-                width={c.w}
-                height={c.h}
-                fill={c.color}
-                opacity={opacity}
-                transform={`rotate(${c.rot * age} ${x} ${y})`}
-                rx={1.5}
-              />
-            );
-          })}
-
-          {/* Dust plumes rising from the advancing cut */}
-          {plumes.map((p, i) => {
-            const age = clamp01((progress - p.spawnP) / p.life);
-            if (progress < p.spawnP || age > 1) return null;
-            const bump = Math.sin(Math.PI * age);
-            const y = p.originY - age * p.rise;
-            const x = p.originX + p.drift * age;
-            const r = lerp(8, p.maxR, age);
-            return <circle key={i} cx={x} cy={y} r={r} fill="url(#puffGrad)" opacity={bump * 0.6} />;
-          })}
-
-          {/* Spoil heaps settling at the base */}
-          <g opacity={spoilT}>
-            {spoilChunks.map((s, i) => (
-              <rect key={i} x={s.x - s.w / 2} y={s.y - s.h / 2} width={s.w} height={s.h} fill={s.shade} opacity={0.75} rx={2} />
-            ))}
-          </g>
-
-          {/* Tiny figures at the trench floor, for scale, with a faint idle bob */}
-          <g opacity={figuresOpacity}>
-            {figures.map((f, i) => {
-              const bob = Math.sin((progress * 2.2 + f.bobPhase) * Math.PI * 2) * 1.4;
+          {/* The section itself, with the trench masked out of it. */}
+          <g mask={`url(#cutmask-${id})`} clipPath={`url(#ground-${id})`}>
+            {geo.bands.map((b, i) => {
+              const bt = stagger(tBands, i, geo.bands.length, 0.03, 0.3);
+              if (bt <= 0.005) return null;
+              const col = b.texture === 'gold' ? PLATE.gold : b.texture === 'burnt' ? PLATE.ember : PLATE.cut;
               return (
-                <g key={i} transform={`translate(${f.x} ${BASE_Y - 4 + bob}) rotate(${f.lean})`}>
-                  <rect x={-2.5} y={-22} width={5} height={18} fill={PALETTE.ink} stroke={PALETTE.ash} strokeOpacity={0.7} strokeWidth={0.8} rx={2} />
-                  <circle cx={0} cy={-26} r={4} fill={PALETTE.ink} stroke={PALETTE.ash} strokeOpacity={0.7} strokeWidth={0.8} />
+                <g key={i}>
+                  <HatchField strokes={b.marks} t={bt} color={col} alpha={0.62} passes={5} modulate={(s) => litness(s.k)} />
+                  <StippleField dots={b.dots} t={bt} color={col} alpha={0.5} />
+                  <InkPath d={b.iface.d} len={b.iface.len} t={bt} color={PLATE.cut} width={1.4} opacity={0.7} />
                 </g>
               );
             })}
           </g>
 
-          {/* Ground fade beneath the mound base */}
-          <rect x={0} y={BASE_Y - 40} width={1920} height={200} fill="url(#groundFadeTrench)" />
-        </g>
+          {/* The surface line, broken by the cut. */}
+          <g mask={`url(#cutmask-${id})`}>
+            <InkPath d={geo.surface.d} len={geo.surface.len} t={tGround} color={PLATE.cut} width={2.2} opacity={0.9} />
+          </g>
 
-        {/* Contrast relief across the section-title safe band */}
-        <rect x={0} y={SAFE_AREA.titleBandTop} width={1920} height={SAFE_AREA.titleBandBottom - SAFE_AREA.titleBandTop} fill={PALETTE.ink} opacity={0.28} />
-        {/* Contrast relief across the subtitle safe band */}
-        <rect x={0} y={1080 - SAFE_AREA.bottom} width={1920} height={SAFE_AREA.bottom} fill={PALETTE.ink} opacity={0.55} />
-      </svg>
+          {/* The cut walls — hacked, lit on one side. */}
+          {cut > 0.005 ? (
+            <>
+              <path d={leftWall} fill="none" stroke={PLATE.cut} strokeWidth={2.4} opacity={0.9} />
+              <path d={rightWall} fill="none" stroke={PLATE.cutDim} strokeWidth={2.0} opacity={0.7} />
+              {/* The floor of the cut, where the picks are working now. */}
+              <path
+                d={`M ${TRENCH_X + wallJitter(cutDepth)} ${cutDepth} L ${TRENCH_X + TRENCH_W - wallJitter(cutDepth + 40)} ${cutDepth + 6}`}
+                fill="none"
+                stroke={PLATE.goldBright}
+                strokeWidth={2.6}
+                opacity={0.55 + 0.45 * biteVel}
+              />
+            </>
+          ) : null}
 
-      {showCaption && (
-        <div style={{ position: 'absolute', left: SAFE_AREA.edge, top: 120, opacity: 0.7 * easeOutCubic(progress / 0.18) }}>
-          <div
-            style={{
-              fontFamily: 'Inter, sans-serif',
-              fontWeight: 600,
-              fontSize: 15,
-              letterSpacing: 4,
-              color: PALETTE.gold,
-              textTransform: 'uppercase',
-            }}
-          >
-            The Great Trench
-          </div>
-          <div
-            style={{
-              fontFamily: 'Inter, sans-serif',
-              fontWeight: 500,
-              fontSize: 13,
-              letterSpacing: 1.5,
-              color: PALETTE.ash,
-              marginTop: 4,
-            }}
-          >
-            1871–1873 · cut straight through the strata
-          </div>
-        </div>
-      )}
-    </AbsoluteFill>
+          {/* Spoil thrown clear of the cut. Each clod is launched by whichever
+              bite is live, arcs, spins, and falls — overlapping the dig by
+              design, so debris is still landing after the picks have stopped. */}
+          {geo.spoil.map((s, i) => {
+            // Which bite threw this clod.
+            const bite = BITES[i % BITES.length];
+            const age = (p - (bite.at + s.born * 0.06)) / (s.life * 0.16);
+            if (age < 0 || age > 1) return null;
+            const tt = age * s.life;
+            const x = TRENCH_X + TRENCH_W / 2 + s.side * (40 + s.vx * tt);
+            const y = cutDepth - 40 + s.vy * tt + 900 * tt * tt;
+            if (y > FLOOR + 120) return null;
+            const o = Math.sin(age * Math.PI) * 0.85;
+            return (
+              <g key={i} transform={`translate(${x.toFixed(1)}, ${y.toFixed(1)}) rotate(${(s.spin * tt).toFixed(1)})`} opacity={o}>
+                <path
+                  d={`M ${-s.size} 0 L ${-s.size * 0.3} ${-s.size * 0.8} L ${s.size} ${-s.size * 0.2} L ${s.size * 0.4} ${s.size * 0.7} Z`}
+                  fill="none"
+                  stroke={PLATE.cut}
+                  strokeWidth={1.2}
+                />
+              </g>
+            );
+          })}
+
+          {/* Dust boiling out of the cut while a bite is live. */}
+          {biteVel > 0.02
+            ? Array.from({ length: 40 }, (_, i) => {
+                const k = i / 40;
+                const u = ((t * 0.35 + k * 3.1) % 1);
+                const o = Math.sin(u * Math.PI) * biteVel * 0.5;
+                if (o <= 0.02) return null;
+                return (
+                  <circle
+                    key={i}
+                    cx={TRENCH_X + 30 + ((k * 7919) % 1) * (TRENCH_W - 60) + (u - 0.5) * 90}
+                    cy={cutDepth - u * 220}
+                    r={1.4 + (k % 0.4) * 6}
+                    fill={PLATE.cut}
+                    opacity={o}
+                  />
+                );
+              })
+            : null}
+
+          {/* Scale figure standing on the lip — the reason the cut reads as
+              enormous rather than as a rectangle. */}
+          {cut > 0.1 ? (
+            <g
+              transform={`translate(${TRENCH_X - 84}, ${geo.surfaceTopAt(TRENCH_X - 84) - 62}) scale(62)`}
+              opacity={0.95}
+            >
+              <path
+                d={
+                  (Math.floor(onNs(frame, 9) / 9) % 2 === 0
+                    ? 'M0.5,0.0 L0.5,0.42 M0.5,0.42 L0.42,0.72 M0.5,0.42 L0.58,0.72 M0.5,0.10 L0.70,0.24'
+                    : 'M0.5,0.0 L0.5,0.42 M0.5,0.42 L0.40,0.72 M0.5,0.42 L0.60,0.72 M0.5,0.10 L0.68,0.18')
+                }
+                fill="none"
+                stroke={PLATE.cut}
+                strokeWidth={2.6 / 62}
+                strokeLinecap="round"
+              />
+            </g>
+          ) : null}
+
+          {/* Depth marker in the margin — trails the cut by design. */}
+          {cut > 0.06 ? (
+            <g opacity={0.85}>
+              <line
+                x1={TRENCH_X - 150} y1={GROUND - 80}
+                x2={TRENCH_X - 150} y2={lerp(GROUND, cutDepth, easeOutCubic(clamp01((p - 0.02) * 1.15)))}
+                stroke={PLATE.ember} strokeWidth={1.6} opacity={0.75}
+              />
+              <text
+                x={TRENCH_X - 166}
+                y={lerp(GROUND, cutDepth, easeOutCubic(clamp01((p - 0.02) * 1.15))) + 6}
+                textAnchor="end"
+                fill={PLATE.ember}
+                style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 26, letterSpacing: 1.6 }}
+              >
+                {Math.round(cut * 16)} m
+              </text>
+            </g>
+          ) : null}
+        </svg>
+      </AbsoluteFill>
+
+      <PlateCaption
+        x={96}
+        y={92}
+        title="The Great Trench"
+        sub="1871–73 · driven through nine cities"
+        t={ramp(p, 0.02, 0.2)}
+      />
+    </Plate>
   );
 };
-
-export default GreatTrench;

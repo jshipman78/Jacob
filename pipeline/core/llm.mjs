@@ -29,6 +29,24 @@ import { ROOT, workDir, ensureDir } from './paths.mjs';
  *  allowed alongside them. */
 export const WEB_TOOLS = ['WebSearch', 'WebFetch', 'ToolSearch'];
 
+/**
+ * Tools every stage is explicitly denied.
+ *
+ * Passing `--allowedTools` alone is not a sandbox: it governs what is
+ * permitted without prompting, and in headless mode a subprocess still reaches
+ * for whatever else it thinks would help. An observed research run used Bash
+ * sixteen times and spawned two sub-agents, inside this repository, while
+ * "only" being allowed the web tools.
+ *
+ * No stage here needs to touch the filesystem or spawn anything — each one
+ * takes text in and returns JSON — so the capability is removed rather than
+ * merely left unrequested.
+ */
+export const DENIED_TOOLS = [
+  'Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep',
+  'Task', 'Agent', 'Skill', 'TodoWrite', 'KillBash', 'BashOutput',
+];
+
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
 
 // --- cost ledger -----------------------------------------------------------
@@ -97,6 +115,8 @@ export async function callClaude({
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--model', model];
   if (system) args.push('--system-prompt', system);
   if (tools.length) args.push('--allowedTools', ...tools);
+  // Order matters: the variadic --allowedTools would otherwise swallow this.
+  args.push('--disallowedTools', ...DENIED_TOOLS.filter((t) => !tools.includes(t)));
 
   const child = spawn('claude', args, {
     cwd: ROOT,

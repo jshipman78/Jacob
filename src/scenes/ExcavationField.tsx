@@ -1,673 +1,660 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
 import type { SceneProps } from './types';
-import { SAFE_AREA } from './types';
+import {
+  Plate, PLATE, HatchField, StippleField, InkPath, PlateCaption,
+  hatch, crossHatch, hatchContours, stipple, flicks, contour, wobble, segment, swelled, burinProfile,
+  rngFor, makeFbm1D, lerp, clamp01, clamp,
+  onNs, rakingLight, ramp, easeOutCubic, easeInOutCubic, stagger,
+} from './engraving';
+
+/**
+ * ExcavationField — the mound of Hisarlık under excavation, as a wide
+ * engraved landscape plate.
+ *
+ * This is the film's atmospheric workhorse: it carries eight shots and about
+ * a third of the running time, so it has to hold up under long looks and
+ * never repeat itself. It is built as five depth planes that move at
+ * different rates —
+ *
+ *   sky → far hills and the strait → the mound → the workings → foreground
+ *
+ * — which is where the depth comes from. On top of that: a gang of workmen
+ * cut as tiny silhouettes, animated on fours in a six-pose cycle so they
+ * read as *limited animation* rather than as tweened puppets; dust lifting
+ * off the spoil heaps; and a raking light that crosses the whole plate over
+ * half a minute.
+ *
+ * options:
+ *   mood: 'fire' | 'candle' | 'dusk' | 'dust' | 'night' | 'gold'
+ *   intensity?: number  — 0..1, how hard the mood is pushed.
+ */
+
+type Mood = 'fire' | 'candle' | 'dusk' | 'dust' | 'night' | 'gold';
+
+type MoodSpec = {
+  tone: 'cold' | 'neutral' | 'warm' | 'fire';
+  /** Colour of the key light source in the scene. */
+  key: string;
+  /** Where the key sits, as a fraction of the frame. */
+  keyX: number;
+  keyY: number;
+  /** How bright the sky hatching is. */
+  skyLight: number;
+  /** How much dust is in the air. */
+  dust: number;
+  /** Whether the workings are populated. */
+  crew: number;
+  lightPeriod: number;
+};
+
+const MOODS: Record<Mood, MoodSpec> = {
+  fire:   { tone: 'fire',    key: '#e07a28', keyX: 0.30, keyY: 0.62, skyLight: 0.55, dust: 1.0, crew: 0.35, lightPeriod: 19 },
+  candle: { tone: 'warm',    key: '#f0c477', keyX: 0.72, keyY: 0.44, skyLight: 0.22, dust: 0.35, crew: 0.0,  lightPeriod: 31 },
+  dusk:   { tone: 'warm',    key: '#d9a05c', keyX: 0.18, keyY: 0.30, skyLight: 0.80, dust: 0.45, crew: 0.25, lightPeriod: 34 },
+  dust:   { tone: 'neutral', key: '#e6d3aa', keyX: 0.62, keyY: 0.22, skyLight: 0.95, dust: 1.0,  crew: 1.0,  lightPeriod: 24 },
+  night:  { tone: 'cold',    key: '#9fb4d0', keyX: 0.78, keyY: 0.18, skyLight: 0.30, dust: 0.25, crew: 0.18, lightPeriod: 38 },
+  gold:   { tone: 'warm',    key: '#f0d38f', keyX: 0.50, keyY: 0.40, skyLight: 0.62, dust: 0.55, crew: 0.45, lightPeriod: 28 },
+};
+
+const W = 1920;
+const H = 1080;
+/** Horizon sits high — the mound and its workings own the lower two thirds. */
+const HORIZON = 430;
 
 // ---------------------------------------------------------------------------
-// ExcavationField — the atmospheric workhorse. A composed, textural field
-// evoking excavated ground: raking light, drifting dust/embers, faint strata
-// banding, a soft horizon, deep vignette. Carries the most shots in the
-// film, so it supports real variation via `mood` (palette + lighting *and*
-// motion behaviour) and `seed` (composition: horizon height, light
-// position, drift direction, mote density).
+// The six-pose workman cycle.
 //
-// Motion model: `progress` (0→1 across the shot) drives the one-time reveal
-// and a slow net drift/sweep so the scene always has a clear arc regardless
-// of shot length. Continuous "alive" motion (sway, flicker, breathing,
-// travelling glints) is driven off `frame/fps` (elapsed seconds) so it reads
-// at a consistent, physically-plausible rate whether the shot is 5s or 55s,
-// and is fully deterministic (both are ordinary numeric props). Nothing
-// wraps or resets abruptly — oscillators use generous periods and mote net
-// drift is bounded, so no visible pop or loop within any real shot length.
+// Each pose is a tiny path drawn in a 1x1 unit box, scaled at use. They are
+// deliberately crude — at 14 to 30 px tall on the plate a figure is five or
+// six burin strokes, which is exactly how a real engraver would cut a distant
+// gang of labourers.
 // ---------------------------------------------------------------------------
 
-export type ExcavationMood = 'fire' | 'candle' | 'dust' | 'night' | 'gold' | 'dusk';
+type Pose = { d: string };
 
-export interface ExcavationFieldOptions {
-  mood?: ExcavationMood;
-  /** 0–1, default 0.5. Scales glow strength, mote density/opacity, contrast. */
-  intensity?: number;
-}
+/** digging: down-swing, mid, up-swing, hold, carry-left, carry-right */
+const POSES: Pose[] = [
+  // 0 — bent over the pick, arms down
+  { d: 'M0.5,0.02 L0.5,0.42 M0.5,0.42 L0.38,0.72 M0.5,0.42 L0.62,0.72 M0.5,0.12 L0.22,0.34 M0.5,0.14 L0.26,0.36' },
+  // 1 — mid-swing, straightening
+  { d: 'M0.5,0.0 L0.5,0.40 M0.5,0.40 L0.36,0.72 M0.5,0.40 L0.64,0.72 M0.5,0.10 L0.30,0.02 M0.5,0.12 L0.32,0.06' },
+  // 2 — top of the swing, pick above the head
+  { d: 'M0.48,0.0 L0.5,0.40 M0.5,0.40 L0.38,0.72 M0.5,0.40 L0.63,0.72 M0.48,0.06 L0.62,-0.16 M0.48,0.08 L0.60,-0.12' },
+  // 3 — hold, upright, resting
+  { d: 'M0.5,0.0 L0.5,0.42 M0.5,0.42 L0.42,0.72 M0.5,0.42 L0.58,0.72 M0.5,0.10 L0.66,0.28' },
+  // 4 — carrying a basket, left stride
+  { d: 'M0.5,0.0 L0.5,0.42 M0.5,0.42 L0.32,0.72 M0.5,0.42 L0.60,0.72 M0.5,0.12 L0.70,0.22 M0.66,0.22 L0.74,0.22' },
+  // 5 — carrying a basket, right stride
+  { d: 'M0.5,0.0 L0.5,0.42 M0.5,0.42 L0.44,0.72 M0.5,0.42 L0.68,0.72 M0.5,0.12 L0.70,0.24 M0.66,0.24 L0.74,0.24' },
+];
 
-// Deterministic PRNG (mulberry32) — never Math.random(), frames render out
-// of order across parallel workers so all variation must be seeded.
-function mulberry32(seed: number) {
-  let a = seed >>> 0;
-  return function rand() {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const TAU = Math.PI * 2;
-
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace('#', '');
-  return [
-    parseInt(h.slice(0, 2), 16),
-    parseInt(h.slice(2, 4), 16),
-    parseInt(h.slice(4, 6), 16),
-  ];
-}
-function rgbToStr([r, g, b]: [number, number, number], a = 1): string {
-  return `rgba(${r},${g},${b},${a})`;
-}
-function lerpColor(c1: string, c2: string, t: number): [number, number, number] {
-  const a = hexToRgb(c1);
-  const b = hexToRgb(c2);
-  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
-}
-function shade(c: [number, number, number], amt: number): [number, number, number] {
-  return c.map((ch) => clamp(amt >= 0 ? lerp(ch, 255, amt) : lerp(ch, 0, -amt), 0, 255)) as [
-    number,
-    number,
-    number
-  ];
-}
-
-type MoodPreset = {
-  skyTop: string;
-  skyHorizon: string;
-  groundTop: string;
-  groundBottom: string;
-  lightColor: string;
-  lightCore: string;
-  moteColor: string;
-  moteColorAlt: string;
-  strataA: string;
-  strataB: string;
-  baseMotes: number;
-  moteSize: [number, number];
-  lightStrength: number;
-  coreStrength: number;
-  driftAngleDeg: [number, number];
-  driftDistance: [number, number];
-  horizonRange: [number, number];
-  grainOpacity: number;
-  // Motion character.
-  flicker: number; // 0-1, fire/candle: light + glow pulses
-  wander: number; // 0-1, candle: light source wanders in a small loop
-  sweepPeriodSec: number; // rake light sweep period
-  sweepAmpPx: number; // rake light sweep amplitude
-  glintTravel: boolean; // gold: an extra travelling specular streak
-  hazeBreathe: number; // 0-1, dust/night: ambient haze pulsing
-  swayPeriodRange: [number, number]; // per-mote sway period (sec)
-  ambientRadius: number; // px, soft glow radius — small+tight for candle, wide for others
-  skyline: boolean; // fire/dusk: a jagged ruined skyline silhouette at the horizon
-  moon: boolean; // night: a crisp small disc, distinct from the ambient glow
-};
-
-const MOOD_PRESETS: Record<ExcavationMood, MoodPreset> = {
-  fire: {
-    skyTop: '#0c0402',
-    skyHorizon: '#230a05',
-    groundTop: '#190905',
-    groundBottom: '#050201',
-    lightColor: '#e35a1f',
-    lightCore: '#ffb066',
-    moteColor: '#ffb066',
-    moteColorAlt: '#ff5a2b',
-    strataA: '#341409',
-    strataB: '#130703',
-    baseMotes: 64,
-    moteSize: [1.4, 4],
-    lightStrength: 0.55,
-    coreStrength: 0.55,
-    driftAngleDeg: [-100, -80],
-    driftDistance: [160, 340],
-    horizonRange: [0.58, 0.72],
-    grainOpacity: 0.05,
-    flicker: 0.85,
-    wander: 0.15,
-    sweepPeriodSec: 11,
-    sweepAmpPx: 90,
-    glintTravel: false,
-    hazeBreathe: 0.2,
-    swayPeriodRange: [1.2, 2.4],
-    ambientRadius: 1200,
-    skyline: true,
-    moon: false,
-  },
-  candle: {
-    skyTop: '#050403',
-    skyHorizon: '#0a0705',
-    groundTop: '#0a0705',
-    groundBottom: '#020201',
-    lightColor: '#b8823a',
-    lightCore: '#f4cf8e',
-    moteColor: '#e7b66a',
-    moteColorAlt: '#caa25a',
-    strataA: '#170f08',
-    strataB: '#080502',
-    baseMotes: 14,
-    moteSize: [0.8, 2],
-    lightStrength: 0.42,
-    coreStrength: 0.55,
-    driftAngleDeg: [-95, -85],
-    driftDistance: [30, 70],
-    horizonRange: [0.72, 0.88],
-    grainOpacity: 0.04,
-    flicker: 0.6,
-    wander: 0.9,
-    sweepPeriodSec: 26,
-    sweepAmpPx: 24,
-    glintTravel: false,
-    hazeBreathe: 0.1,
-    swayPeriodRange: [2, 3.6],
-    ambientRadius: 560,
-    skyline: false,
-    moon: false,
-  },
-  dust: {
-    skyTop: '#110c07',
-    skyHorizon: '#241a0f',
-    groundTop: '#241a0f',
-    groundBottom: '#0a0704',
-    lightColor: '#b89a5e',
-    lightCore: '#e8c98a',
-    moteColor: '#d8c39a',
-    moteColorAlt: '#a68f61',
-    strataA: '#3a2c19',
-    strataB: '#140e08',
-    baseMotes: 92,
-    moteSize: [1, 2.8],
-    lightStrength: 0.44,
-    coreStrength: 0.26,
-    driftAngleDeg: [-70, -30],
-    driftDistance: [120, 260],
-    horizonRange: [0.5, 0.62],
-    grainOpacity: 0.07,
-    flicker: 0.08,
-    wander: 0,
-    sweepPeriodSec: 7,
-    sweepAmpPx: 160,
-    glintTravel: false,
-    hazeBreathe: 0.55,
-    swayPeriodRange: [0.9, 1.8],
-    ambientRadius: 1300,
-    skyline: false,
-    moon: false,
-  },
-  night: {
-    skyTop: '#020408',
-    skyHorizon: '#071120',
-    groundTop: '#070d15',
-    groundBottom: '#020304',
-    lightColor: '#5f7f9c',
-    lightCore: '#d8ecf7',
-    moteColor: '#a9c4d8',
-    moteColorAlt: '#7d97ab',
-    strataA: '#0c1721',
-    strataB: '#03060a',
-    baseMotes: 30,
-    moteSize: [0.8, 2.2],
-    lightStrength: 0.3,
-    coreStrength: 0.6,
-    driftAngleDeg: [-20, 20],
-    driftDistance: [90, 210],
-    horizonRange: [0.6, 0.74],
-    grainOpacity: 0.03,
-    flicker: 0.04,
-    wander: 0,
-    sweepPeriodSec: 34,
-    sweepAmpPx: 70,
-    glintTravel: false,
-    hazeBreathe: 0.45,
-    swayPeriodRange: [2.4, 4.2],
-    ambientRadius: 900,
-    skyline: false,
-    moon: true,
-  },
-  gold: {
-    skyTop: '#130c04',
-    skyHorizon: '#33220a',
-    groundTop: '#2e1e09',
-    groundBottom: '#0a0602',
-    lightColor: '#c99a3f',
-    lightCore: '#f6da8f',
-    moteColor: '#f0d38f',
-    moteColorAlt: '#d9b872',
-    strataA: '#523810',
-    strataB: '#1c1204',
-    baseMotes: 54,
-    moteSize: [1, 3.2],
-    lightStrength: 0.5,
-    coreStrength: 0.55,
-    driftAngleDeg: [-100, -70],
-    driftDistance: [70, 160],
-    horizonRange: [0.62, 0.78],
-    grainOpacity: 0.05,
-    flicker: 0.18,
-    wander: 0.1,
-    sweepPeriodSec: 15,
-    sweepAmpPx: 180,
-    glintTravel: true,
-    hazeBreathe: 0.15,
-    swayPeriodRange: [1.6, 2.8],
-    ambientRadius: 1100,
-    skyline: false,
-    moon: false,
-  },
-  dusk: {
-    skyTop: '#130e1c',
-    skyHorizon: '#3a2313',
-    groundTop: '#160f0a',
-    groundBottom: '#040305',
-    lightColor: '#c67a3f',
-    lightCore: '#eab06a',
-    moteColor: '#cbb98e',
-    moteColorAlt: '#8f7a68',
-    strataA: '#22170c',
-    strataB: '#0c0807',
-    baseMotes: 18,
-    moteSize: [1, 2.4],
-    lightStrength: 0.4,
-    coreStrength: 0.32,
-    driftAngleDeg: [-60, -20],
-    driftDistance: [40, 100],
-    horizonRange: [0.34, 0.42],
-    grainOpacity: 0.04,
-    flicker: 0.03,
-    wander: 0,
-    sweepPeriodSec: 48,
-    sweepAmpPx: 60,
-    glintTravel: false,
-    hazeBreathe: 0.12,
-    swayPeriodRange: [3, 5],
-    ambientRadius: 1600,
-    skyline: true,
-    moon: false,
-  },
-};
-
-type Mote = {
+type Figure = {
   x: number;
   y: number;
-  r: number;
-  driftAngle: number;
-  driftDist: number;
+  scale: number;
+  /** Which plane it belongs to, for parallax. */
+  plane: number;
+  /** Phase offset into the pose cycle. */
   phase: number;
-  swayAmp: number;
-  swayPeriod: number;
-  colorAlt: boolean;
-  opacityBase: number;
-  layer: 0 | 1; // 0 = far (slow, small), 1 = near (fast, larger)
+  /** Frames per pose — varied so the gang isn't in lockstep. */
+  hold: number;
+  /** 'dig' figures cycle 0..3; 'carry' figures shuttle along a path. */
+  kind: 'dig' | 'carry';
+  /** For carriers: how far along their run, and the run's extent. */
+  runX: number;
+  flip: boolean;
+  o: number;
 };
 
-export const ExcavationField: React.FC<SceneProps> = ({ progress, frame, fps, seed, options }) => {
-  const opts = (options ?? {}) as ExcavationFieldOptions;
-  const mood: ExcavationMood = opts.mood ?? 'dust';
-  const intensity = clamp(opts.intensity ?? 0.5, 0, 1);
-  const preset = MOOD_PRESETS[mood];
+export const ExcavationField: React.FC<SceneProps> = ({
+  progress, frame, fps, seed, options,
+}) => {
+  const opts = (options ?? {}) as { mood?: Mood; intensity?: number };
+  const mood = opts.mood ?? 'dusk';
+  const spec = MOODS[mood] ?? MOODS.dusk;
+  const intensity = clamp01(opts.intensity ?? 0.6);
 
-  const seedInt = Math.floor(clamp(seed, 0, 0.999999) * 1_000_000_007) + 17;
-  const t = frame / Math.max(1, fps); // elapsed seconds within this shot
+  // -------------------------------------------------------------------------
+  // Static geometry, built once per seed. None of this touches `frame`.
+  // -------------------------------------------------------------------------
 
-  // Composition variation, seeded once per shot.
-  const comp = useMemo(() => {
-    const rng = mulberry32(seedInt);
-    const horizonY = lerp(preset.horizonRange[0], preset.horizonRange[1], rng()) * 1080;
-    const lightX = lerp(0.12, 0.88, rng()) * 1920;
-    const lightY = lerp(0.06, 0.4, rng()) * 1080;
-    const rakeAngle = lerp(20, 55, rng());
-    const bandCount = 6 + Math.floor(rng() * 3);
-    const phaseA = rng() * TAU;
-    const phaseB = rng() * TAU;
-    const phaseC = rng() * TAU;
-    const phaseD = rng() * TAU;
-    // A jagged ruined-skyline silhouette along the horizon (fire/dusk only).
-    const skylinePts: number[] = [];
-    if (preset.skyline) {
-      const segs = 22;
-      for (let i = 0; i <= segs; i++) {
-        const base = i === 0 || i === segs ? 0 : lerp(10, 95, rng());
-        skylinePts.push(base);
+  const geo = useMemo(() => {
+    const rand = rngFor(seed, 'field-geo');
+    const fbm = makeFbm1D(seed, 'field-ridge');
+
+    // --- far ridge line, across the whole plate ---------------------------
+    const farPts: { x: number; y: number }[] = [];
+    for (let i = 0; i <= 60; i++) {
+      const u = i / 60;
+      const x = -200 + u * (W + 400);
+      const y =
+        HORIZON -
+        26 -
+        fbm(u * 3.1 + 4.2) * 34 -
+        Math.sin(u * Math.PI * 1.4 + 1.1) * 16;
+      farPts.push({ x, y });
+    }
+    const farRidge = contour(seed, 'far', farPts, 1.4, 220);
+
+    // --- the strait: a band of water below the far ridge -------------------
+    const water = hatch(seed, 'water', {
+      x: -100, y: HORIZON - 30, w: W + 200, h: 44,
+      angle: 0, pitch: 5.2, amp: 1.6, coverage: 0.55, jitter: 0.9,
+      width: 0.95, samples: 10,
+      density: (_u, v) => 0.35 + 0.65 * (1 - v),
+    });
+
+    // --- the mound of Hisarlık: the silhouette that owns the frame --------
+    // Asymmetric on purpose — the flat top is where the citadel was, and the
+    // long tail to the right is the slope Schliemann attacked.
+    const moundPts: { x: number; y: number }[] = [];
+    for (let i = 0; i <= 90; i++) {
+      const u = i / 90;
+      const x = -160 + u * (W + 320);
+      // A broad shoulder rising to a flat crown around u = 0.42.
+      const crown = Math.exp(-Math.pow((u - 0.44) / 0.30, 2));
+      const shoulder = Math.exp(-Math.pow((u - 0.74) / 0.26, 2)) * 0.42;
+      const y =
+        HORIZON + 30 - (crown * 246 + shoulder * 118) + fbm(u * 6.3 + 19.1) * 15;
+      moundPts.push({ x, y });
+    }
+    const moundLine = contour(seed, 'mound', moundPts, 1.6, 190);
+    const moundTopAt = (px: number) => {
+      const u = clamp01((px + 160) / (W + 320));
+      const i = Math.round(u * 90);
+      return moundPts[clamp(i, 0, 90)].y;
+    };
+
+    // Closed silhouette, for masking the flank hatching.
+    const moundFill =
+      `M ${moundPts[0].x} ${H + 60} ` +
+      moundPts.map((p) => `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ') +
+      ` L ${moundPts[moundPts.length - 1].x} ${H + 60} Z`;
+
+    // --- the flank -------------------------------------------------------
+    // Cut with CONTOUR hatching that follows the skyline down into the form,
+    // not with a parallel grid. The lines themselves have to describe the
+    // roundness of the mound; parallel hatching over the same shape reads as
+    // graph paper laid on a hill, which is precisely the diagram problem we
+    // are getting away from.
+    //
+    // Tone plan: a bright cut rim just under the skyline on the lit side, the
+    // tone dropping away into an uncut dark on the shadow side and again into
+    // the deep foreground, so the plate has real blacks rather than an even
+    // grey everywhere.
+    const flankTone = (u: number, v: number) => {
+      // u runs left→right along the skyline, v runs down into the mound.
+      const lit = 1 - clamp01(Math.abs(u - spec.keyX) * 1.7);
+      // A bright cut rim just under the skyline — the light catching the crest.
+      const rim = Math.exp(-Math.pow((v - 0.05) / 0.13, 2));
+      // The body of the slope: full tone at the top, falling into the dark of
+      // the near ground, then picking up again on the foreground bank.
+      const body = clamp01(1 - v * 0.72);
+      const trough = 1 - 0.55 * Math.exp(-Math.pow((v - 0.52) / 0.15, 2));
+      // Passages of light and shadow ALONG the slope, so the tone is never an
+      // even wash — this is what stops it reading as a gradient.
+      const passages = 0.55 + fbm(u * 4.1 + 2.1) * 0.75 + fbm(u * 11.7 + 8.3) * 0.25;
+      return clamp01((rim * 1.15 + body * 0.85) * (0.30 + lit * 0.95) * passages * trough);
+    };
+    const flankMain = hatchContours(seed, 'flankMain', moundPts, {
+      // Enough contours to reach the foot of the plate: the near flank has to
+      // fill the lower frame, or the composition is a lump in a void.
+      lines: 44,
+      spacing: 12,
+      spacingGrowth: 1.055,
+      dashLength: 44,
+      dashGap: 17,
+      amp: 1.1,
+      width: 1.5,
+      drift: 10,
+      density: flankTone,
+    });
+    // A sparse second system running across the contours, only in the
+    // mid-tones — the crossing pass an engraver adds last to deepen a grey.
+    const flankCross = hatch(seed, 'flankCross', {
+      x: -160, y: HORIZON - 150, w: W + 320, h: 420,
+      angle: 64, pitch: 27, amp: 1.3, coverage: 0.42, jitter: 1.1,
+      width: 0.85, samples: 6,
+      density: (u, v) => {
+        const t = flankTone(u, clamp01(v * 1.1));
+        // Only where the tone is a middling grey; never in the lights or the
+        // darks, which is what keeps it from flattening into a grid.
+        return clamp01(1 - Math.abs(t - 0.42) * 3.4) * 0.85;
+      },
+    });
+
+    // --- the trench cut into the near flank -------------------------------
+    const trenchX = 1180;
+    const trenchW = 300;
+    const trenchTop = moundTopAt(trenchX + trenchW / 2) + 26;
+    const trenchPts = [
+      { x: trenchX, y: trenchTop },
+      { x: trenchX + 26, y: trenchTop + 150 },
+      { x: trenchX + 52, y: trenchTop + 268 },
+      { x: trenchX + trenchW - 46, y: trenchTop + 276 },
+      { x: trenchX + trenchW - 20, y: trenchTop + 148 },
+      { x: trenchX + trenchW, y: trenchTop },
+    ];
+    const trench = contour(seed, 'trench', trenchPts, 1.5, 90);
+
+    // --- spoil heaps in the near ground -----------------------------------
+    const heaps = [0, 1, 2, 3].map((i) => {
+      const cx = 160 + i * 470 + rand() * 130;
+      const cy = 830 + rand() * 60;
+      const rx = 200 + rand() * 130;
+      const ry = 52 + rand() * 34;
+      const pts: { x: number; y: number }[] = [];
+      for (let j = 0; j <= 34; j++) {
+        const u = j / 34;
+        const a = Math.PI * (1 + u);
+        pts.push({
+          x: cx + Math.cos(a) * rx,
+          y: cy + Math.sin(a) * ry * (0.8 + fbm(u * 5 + i * 9) * 0.35),
+        });
       }
-    }
-    return { horizonY, lightX, lightY, rakeAngle, bandCount, phaseA, phaseB, phaseC, phaseD, skylinePts };
-  }, [seedInt, preset]);
+      return { line: contour(seed, `heap${i}`, pts, 1.3, 110), cx, cy, rx, ry };
+    });
 
-  const motes: Mote[] = useMemo(() => {
-    const rng = mulberry32(seedInt + 91);
-    const count = Math.round(preset.baseMotes * lerp(0.45, 1.15, intensity));
-    const list: Mote[] = [];
-    for (let i = 0; i < count; i++) {
-      const angleDeg = lerp(preset.driftAngleDeg[0], preset.driftAngleDeg[1], rng());
-      const layer: 0 | 1 = rng() < 0.4 ? 1 : 0;
-      const sizeMul = layer === 1 ? lerp(1.15, 1.6, rng()) : lerp(0.6, 1, rng());
-      list.push({
-        x: rng() * 1920,
-        y: rng() * 1080,
-        r: lerp(preset.moteSize[0], preset.moteSize[1], rng()) * sizeMul,
-        driftAngle: (angleDeg * Math.PI) / 180,
-        driftDist: lerp(preset.driftDistance[0], preset.driftDistance[1], rng()) * (layer === 1 ? 1.25 : 0.7),
-        phase: rng() * TAU,
-        swayAmp: lerp(6, 26, rng()) * (layer === 1 ? 1.3 : 0.8),
-        swayPeriod: lerp(preset.swayPeriodRange[0], preset.swayPeriodRange[1], rng()),
-        colorAlt: rng() > 0.6,
-        opacityBase: lerp(0.35, 1, rng()) * (layer === 1 ? 1 : 0.65),
-        layer,
+    // --- ground hatching in the working floor -----------------------------
+    // Confined to a band well above the subtitles; below y≈820 the plate is
+    // left almost solid, which both anchors the composition with a real black
+    // and guarantees the caption band stays calm.
+    const floor = hatch(seed, 'floor', {
+      x: -80, y: 740, w: W + 160, h: 150,
+      angle: 3, pitch: 19, amp: 1.9, coverage: 0.5, jitter: 1.0,
+      width: 1.0, samples: 8,
+      density: (u, v) =>
+        clamp01(1.15 - v * 2.2) * clamp01(0.35 + fbm(u * 6.7 + 40) * 0.75),
+    });
+
+    // --- sky --------------------------------------------------------------
+    // Only the band above the horizon is cut, and it fades to an uncut dark
+    // at the top of the plate. A hatched sky that reaches the top edge has no
+    // weight; leaving it solid is what gives the mound something to sit
+    // against.
+    const sky = hatch(seed, 'sky', {
+      x: -60, y: 40, w: W + 120, h: HORIZON - 40,
+      angle: 0, pitch: 13, amp: 2.2, coverage: 0.66, jitter: 0.9,
+      width: 0.85, samples: 9,
+      density: (u, v) => {
+        // Bright only close to the horizon, and only near the key light.
+        const toHorizon = Math.pow(v, 2.6);
+        const toKey = 1 - clamp01(Math.abs(u - spec.keyX) * 1.55);
+        return clamp01(toHorizon * 0.95 + toKey * toHorizon * 0.7 - 0.06);
+      },
+    });
+
+    // --- clouds: a few long contour strokes, aerial ------------------------
+    const clouds = [0, 1, 2, 3, 4].map((i) => {
+      const y = 90 + i * 62 + rand() * 26;
+      const x0 = -100 + rand() * 500;
+      const w = 500 + rand() * 780;
+      const pts: { x: number; y: number }[] = [];
+      for (let j = 0; j <= 26; j++) {
+        const u = j / 26;
+        pts.push({ x: x0 + u * w, y: y + fbm(u * 4 + i * 13) * 11 });
+      }
+      return contour(seed, `cloud${i}`, pts, 1.2, 200);
+    });
+
+    // --- the gang ----------------------------------------------------------
+    const figures: Figure[] = [];
+    const nFigures = Math.round(26 * spec.crew);
+    for (let i = 0; i < nFigures; i++) {
+      // Most of the gang works ON the skyline, where a figure silhouettes
+      // against the cut sky and actually reads. Buried in the flank hatching
+      // they turn into debris — which is exactly what the first pass did.
+      const onRidge = rand() < 0.62;
+      const plane = onRidge ? 0 : rand() < 0.5 ? 1 : 2;
+      const depth = [0.5, 0.72, 1.0][plane];
+      const x = 110 + rand() * (W - 220);
+      const ridgeY = moundTopAt(x);
+      const y = onRidge
+        ? ridgeY + 2 + rand() * 10
+        : Math.min(ridgeY + 90 + depth * 190 + rand() * 40, 800);
+      figures.push({
+        x,
+        y,
+        scale: lerp(26, 52, depth) * lerp(0.85, 1.15, rand()),
+        plane,
+        phase: Math.floor(rand() * 6),
+        hold: 3 + Math.floor(rand() * 4), // shoot on 3s, 4s, 5s or 6s
+        kind: rand() < 0.62 ? 'dig' : 'carry',
+        runX: 60 + rand() * 180,
+        flip: rand() < 0.5,
+        o: onRidge ? 0.95 : lerp(0.42, 0.8, depth),
       });
     }
-    // Far layer first so near motes draw on top (simple depth ordering).
-    return list.sort((a, b) => a.layer - b.layer);
-  }, [seedInt, preset, intensity]);
 
-  const strataBands = useMemo(() => {
-    const rng = mulberry32(seedInt + 233);
-    const bands = [];
-    const top = comp.horizonY;
-    const bottom = 1080;
-    const total = bottom - top;
-    let cursor = top;
-    for (let i = 0; i < comp.bandCount; i++) {
-      const remaining = comp.bandCount - i;
-      const h = Math.max(18, (total - (cursor - top)) / remaining) * lerp(0.75, 1.25, rng());
-      const cTop = rng();
-      const shadeAmt = lerp(-0.13, 0.13, rng());
-      bands.push({
-        top: cursor - top, // relative to the ground wrapper
-        height: h,
-        colorMix: cTop,
-        shadeAmt,
-        opacity: lerp(0.55, 1, rng()),
-      });
-      cursor += h;
+    // --- airborne dust -----------------------------------------------------
+    const motes = stipple(seed, 'motes', {
+      x: -100, y: 260, w: W + 200, h: 640,
+      count: Math.round(220 * spec.dust),
+      minR: 0.7, maxR: 2.6,
+    });
+
+    // --- the near bank -----------------------------------------------------
+    // A spoil bank thrown up in the immediate foreground, crossing the lower
+    // third. It gives the plate a true near plane, puts a dark mass under the
+    // subtitles, and creates a trough of shadow between itself and the mound —
+    // which is what actually makes the mound sit *back* in the frame.
+    const bankPts: { x: number; y: number }[] = [];
+    for (let i = 0; i <= 70; i++) {
+      const u = i / 70;
+      const x = -200 + u * (W + 400);
+      const hump =
+        Math.exp(-Math.pow((u - 0.18) / 0.22, 2)) * 96 +
+        Math.exp(-Math.pow((u - 0.82) / 0.28, 2)) * 74;
+      bankPts.push({ x, y: 872 - hump + fbm(u * 8.7 + 55) * 20 });
     }
-    return bands;
-  }, [seedInt, comp]);
+    const bankLine = contour(seed, 'bank', bankPts, 1.7, 150);
+    const bankFill =
+      `M ${bankPts[0].x} ${H + 60} ` +
+      bankPts.map((p) => `L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ') +
+      ` L ${bankPts[bankPts.length - 1].x} ${H + 60} Z`;
+    // Only the crest is cut; below it the block is left solid, so the bottom
+    // of the plate is a genuine black and the caption band stays calm.
+    const bankHatch = hatchContours(seed, 'bank', bankPts, {
+      lines: 9,
+      spacing: 10,
+      spacingGrowth: 1.16,
+      dashLength: 30,
+      dashGap: 22,
+      amp: 1.3,
+      width: 1.25,
+      drift: 12,
+      density: (u, v) =>
+        clamp01(1.25 - v * 2.3) * clamp01(0.4 + fbm(u * 5.3 + 90) * 0.9),
+    });
 
-  // One-time reveal envelope — always progress-driven so the shot has a
-  // clear arc regardless of duration.
-  const revealIn = clamp(progress / 0.12, 0, 1);
-  const settle = 1 - Math.pow(1 - revealIn, 3);
+    // --- foreground framing: a dark cut corner, near-plane ------------------
+    const foreFlicks = flicks(seed, 'fore', {
+      x: -40, y: 830, w: 560, h: 130,
+      count: 90,
+      length: 26,
+      angleAt: (u) => -18 - u * 26,
+      density: (u, v) => clamp01((1 - u * 1.4)) * clamp01(1 - v * 0.7),
+    });
 
-  // Net directional drift over the whole shot (progress-driven, monotonic,
-  // never wraps) plus continuous fine motion (seconds-driven, always alive).
-  const netDrift = progress;
+    return {
+      farRidge, water, moundLine, moundFill, flankMain, flankCross,
+      trench, trenchTop, trenchX, trenchW,
+      heaps, floor, sky, clouds, figures, motes, foreFlicks, moundTopAt,
+      bankLine, bankFill, bankHatch,
+    };
+  }, [seed, spec.keyX, spec.crew, spec.dust]);
 
-  // Flicker: layered slow oscillators, deterministic, never a hard strobe.
-  const flickerMul =
-    1 +
-    preset.flicker *
-      (0.5 * Math.sin((t * TAU) / 1.9 + comp.phaseA) + 0.5 * Math.sin((t * TAU) / 0.7 + comp.phaseB)) *
-      0.3;
+  // -------------------------------------------------------------------------
+  // Time
+  // -------------------------------------------------------------------------
 
-  const hazeMul = 1 + preset.hazeBreathe * 0.5 * (1 + Math.sin((t * TAU) / 8.5 + comp.phaseC));
+  const p = clamp01(progress);
 
-  const lightOpacity = preset.lightStrength * lerp(0.55, 1, intensity) * settle * flickerMul;
-  const coreOpacity = preset.coreStrength * lerp(0.5, 1, intensity) * settle * flickerMul;
+  // The plate builds itself in a deliberate order: sky, then the far land,
+  // then the mound, then the workings, then the gang. Each stage overlaps the
+  // next, so the drawing is always doing something somewhere.
+  const tSky = ramp(p, 0.00, 0.26);
+  const tFar = ramp(p, 0.06, 0.30);
+  const tMound = ramp(p, 0.10, 0.40);
+  const tFlank = ramp(p, 0.16, 0.58);
+  const tWork = ramp(p, 0.26, 0.66);
+  const tCrew = ramp(p, 0.34, 0.72);
 
-  // Light source wander (candle) + gentle continuous position drift for all.
-  const wanderX = preset.wander * (Math.sin((t * TAU) / 3.4 + comp.phaseA) * 16);
-  const wanderY = preset.wander * (Math.cos((t * TAU) / 2.6 + comp.phaseB) * 10);
-  const lightX = comp.lightX + wanderX + Math.sin((t * TAU) / (preset.sweepPeriodSec * 1.6) + comp.phaseD) * 12;
-  const lightY = comp.lightY + wanderY;
+  // Camera: a slow push with a lateral drift, easing at the turns rather than
+  // sliding at a constant rate. This is the parallax driver.
+  const camU = easeInOutCubic(clamp01(p * 1.06));
+  const push = 1 + camU * 0.075;
+  const driftX = lerp(-26, 26, rakingLight(frame, fps, 42, seed)) - camU * 30;
+  const driftY = -camU * 22;
 
-  // Raking light sweep across the ground — continuous back-and-forth via a
-  // long, slow period so it never snaps or wraps.
-  const sweepPx = Math.sin((t * TAU) / preset.sweepPeriodSec + comp.phaseC) * preset.sweepAmpPx;
-  // Gold gets an additional, longer-period travelling specular streak.
-  const glintPx = preset.glintTravel
-    ? Math.sin((t * TAU) / 42 + comp.phaseD) * 640
-    : 0;
+  const plane = (depth: number) => ({
+    transform: `translate(${(driftX * depth).toFixed(2)}px, ${(driftY * depth).toFixed(2)}px) scale(${(1 + (push - 1) * depth).toFixed(4)})`,
+    transformOrigin: '50% 62%',
+  });
 
-  // Horizon breathes a few pixels — present, never enough to read as a cut.
-  const horizonWobble = Math.sin((t * TAU) / 37 + comp.phaseB) * 5;
+  // The travelling key light, used to modulate stroke opacity so the light
+  // moves ACROSS the hatching rather than sitting on top of it as a haze.
+  const sweep = rakingLight(frame, fps, spec.lightPeriod, seed * 0.37);
+  const sweepX = lerp(-0.25, 1.25, sweep);
+  const litness = (u: number) =>
+    1 + 0.55 * intensity * Math.exp(-Math.pow((u - sweepX) / 0.26, 2));
 
-  const groundTopPx = comp.horizonY;
-  const groundH = 1080 - groundTopPx;
+  // Dust drifts on a long loop; motes rise and fade before they wrap.
+  const dustT = frame / fps;
 
   return (
-    <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#030202' }}>
-      {/* Sky: deep and mostly flat, just a whisper of warmth near the
-          horizon. The mood's real color comes from the light glow below. */}
-      <AbsoluteFill
-        style={{
-          background: `linear-gradient(180deg, ${preset.skyTop} 0%, ${preset.skyTop} 55%, ${preset.skyHorizon} 100%)`,
-        }}
-      />
+    <Plate
+      seed={seed}
+      frame={frame}
+      fps={fps}
+      tone={spec.tone}
+      lightPeriodSec={spec.lightPeriod}
+      lightStrength={0.7 + intensity * 0.5}
+    >
+      {/* ---------------- sky plane (slowest) ---------------- */}
+      <AbsoluteFill style={plane(0.18)}>
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+          <HatchField
+            strokes={geo.sky}
+            t={tSky}
+            color={PLATE.cut}
+            alpha={0.30 * spec.skyLight}
+            weight={0.9}
+            passes={6}
+            modulate={(s) => litness(s.k)}
+          />
+          {geo.clouds.map((c, i) => (
+            <InkPath
+              key={i}
+              d={c.d}
+              len={c.len}
+              t={stagger(tSky, i, geo.clouds.length, 0.1, 0.5)}
+              color={PLATE.cut}
+              width={1.0}
+              opacity={0.16 + 0.1 * spec.skyLight}
+            />
+          ))}
+        </svg>
+      </AbsoluteFill>
 
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          transform: `translateY(${horizonWobble}px)`,
-        }}
-      >
-        {/* Ground base gradient, subtly scaling for a near-imperceptible parallax. */}
-        <div
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: groundTopPx,
-            height: groundH,
-            background: `linear-gradient(180deg, ${preset.groundTop} 0%, ${preset.groundBottom} 100%)`,
-            transform: `scale(${1 + 0.014 * netDrift})`,
-            transformOrigin: '50% 0%',
-          }}
-        />
+      {/* ---------------- far land and the strait ---------------- */}
+      <AbsoluteFill style={plane(0.34)}>
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+          <HatchField
+            strokes={geo.water}
+            t={tFar}
+            color={PLATE.cut}
+            alpha={0.34}
+            passes={4}
+            modulate={(s) => litness(s.k)}
+          />
+          <InkPath d={geo.farRidge.d} len={geo.farRidge.len} t={tFar} color={PLATE.cutDim} width={1.5} opacity={0.6} />
+        </svg>
+      </AbsoluteFill>
 
-        {/* Strata banding — distinct sediment layers, each independently
-            shaded off the two mood base tones. */}
-        <div style={{ position: 'absolute', left: 0, right: 0, top: groundTopPx, height: groundH }}>
-          {strataBands.map((b, i) => {
-            const base = lerpColor(preset.strataA, preset.strataB, b.colorMix);
-            const [r, g, bl] = shade(base, b.shadeAmt);
-            const [r2, g2, bl2] = shade(base, b.shadeAmt - 0.09);
-            const op = b.opacity * (0.6 + 0.4 * settle);
+      {/* ---------------- the mound ---------------- */}
+      <AbsoluteFill style={plane(0.62)}>
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+          <defs>
+            <clipPath id={`mound-${Math.round(seed * 1e6)}`}>
+              <path d={geo.moundFill} />
+            </clipPath>
+          </defs>
+
+          {/* The block is dark inside the mound; the contour cuts open it. */}
+          <g clipPath={`url(#mound-${Math.round(seed * 1e6)})`}>
+            <HatchField
+              strokes={geo.flankMain}
+              t={tFlank}
+              color={PLATE.cut}
+              alpha={1.0}
+              passes={5}
+              modulate={(s) => litness(s.k)}
+            />
+            {/* The crossing pass arrives later — that's how an engraver
+                actually builds a dark: one direction, then the other, with
+                the block re-inked between. */}
+            <HatchField
+              strokes={geo.flankCross}
+              t={ramp(p, 0.38, 0.82)}
+              color={PLATE.cutDim}
+              alpha={0.42}
+              passes={4}
+              modulate={(s) => litness(s.k)}
+            />
+          </g>
+
+          <InkPath d={geo.moundLine.d} len={geo.moundLine.len} t={tMound} color={PLATE.cut} width={1.9} opacity={0.82} />
+          <InkPath d={geo.trench.d} len={geo.trench.len} t={ramp(p, 0.30, 0.56)} color={PLATE.cut} width={1.6} opacity={0.72} />
+        </svg>
+      </AbsoluteFill>
+
+      {/* ---------------- the workings ---------------- */}
+      <AbsoluteFill style={plane(0.84)}>
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+          <HatchField
+            strokes={geo.floor}
+            t={tWork}
+            color={PLATE.cut}
+            alpha={0.26}
+            passes={5}
+            modulate={(s) => litness(s.k)}
+          />
+          {geo.heaps.map((h, i) => (
+            <InkPath
+              key={i}
+              d={h.line.d}
+              len={h.line.len}
+              t={stagger(tWork, i, geo.heaps.length, 0.12, 0.5)}
+              color={PLATE.cut}
+              width={1.4}
+              opacity={0.5}
+            />
+          ))}
+
+          {/* The gang. Poses are quantised — each figure holds its drawing
+              for 3 to 6 frames and then snaps to the next. Nothing here is
+              interpolated; that is the whole point. */}
+          {geo.figures.map((f, i) => {
+            const appear = stagger(tCrew, i, geo.figures.length, 0.014, 0.16);
+            if (appear <= 0.02) return null;
+            const held = Math.floor(onNs(frame + i * 5, f.hold) / f.hold);
+            const poseIdx =
+              f.kind === 'dig'
+                ? (held + f.phase) % 4
+                : 4 + ((held + f.phase) % 2);
+            // Carriers shuttle back and forth along a short run, and they
+            // pause at each end — a triangle wave with flats.
+            const shuttle =
+              f.kind === 'carry'
+                ? (() => {
+                    const c = ((frame / fps) * 0.09 + f.phase / 6) % 1;
+                    const tri = c < 0.5 ? c * 2 : 2 - c * 2;
+                    return (easeInOutCubic(clamp01((tri - 0.12) / 0.76)) - 0.5) * f.runX;
+                  })()
+                : 0;
+            const s = f.scale;
             return (
-              <div
+              <g
                 key={i}
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  top: b.top,
-                  height: b.height,
-                  // A gentle internal gradient rather than a flat fill, so a
-                  // band never reads as a solid highlighted bar.
-                  background: `linear-gradient(180deg, ${rgbToStr([r, g, bl], op)} 0%, ${rgbToStr(
-                    [r2, g2, bl2],
-                    op
-                  )} 100%)`,
-                  borderTop: '1px solid rgba(255,235,200,0.05)',
-                }}
+                transform={`translate(${(f.x + shuttle).toFixed(1)}, ${f.y.toFixed(1)}) scale(${((f.flip ? -1 : 1) * s).toFixed(2)}, ${s.toFixed(2)})`}
+                opacity={f.o * appear * 0.9}
+              >
+                <path
+                  d={POSES[poseIdx].d}
+                  fill="none"
+                  stroke={PLATE.cut}
+                  strokeWidth={2.4 / s}
+                  strokeLinecap="round"
+                />
+              </g>
+            );
+          })}
+
+          <StippleField
+            dots={geo.motes.slice(0, Math.round(geo.motes.length * 0.4))}
+            t={tWork}
+            color={PLATE.cut}
+            alpha={0.3}
+          />
+        </svg>
+      </AbsoluteFill>
+
+      {/* ---------------- airborne dust (fastest, nearest) ---------------- */}
+      <AbsoluteFill style={plane(1.0)}>
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
+          {geo.motes.map((m, i) => {
+            // Each mote drifts up and across on its own long loop, fading at
+            // both ends so the wrap is never visible.
+            const speed = 0.018 + (m.k % 0.31) * 0.05;
+            const u = ((dustT * speed) + m.k * 3.7) % 1;
+            const fade = Math.sin(u * Math.PI);
+            const o = m.o * fade * 0.5 * spec.dust * tWork;
+            if (o <= 0.01) return null;
+            const dx = (u - 0.5) * 180 * (0.5 + (m.k % 0.5));
+            const dy = -u * 150;
+            return (
+              <circle
+                key={i}
+                cx={m.x + dx}
+                cy={m.y + dy}
+                r={m.r}
+                fill={PLATE.cut}
+                opacity={o}
               />
             );
           })}
-        </div>
-
-        {/* Fine soil grain — a static repeating gradient (no per-frame
-            filter), gently translating for texture that isn't inert. */}
-        <div
-          style={{
-            position: 'absolute',
-            left: -60,
-            right: -60,
-            top: groundTopPx,
-            height: groundH,
-            opacity: preset.grainOpacity * hazeMul,
-            mixBlendMode: 'overlay',
-            transform: `translateX(${Math.sin((t * TAU) / 21 + comp.phaseA) * 22}px)`,
-            background:
-              'repeating-linear-gradient(115deg, rgba(255,255,255,0.5) 0px, rgba(255,255,255,0.5) 1px, rgba(0,0,0,0.4) 1px, rgba(0,0,0,0.4) 3px)',
-          }}
-        />
-
-        {/* Raking light across the ground — continuously sweeps, clipped to
-            the ground so it reads as light grazing earth, not a full wash. */}
-        <div
-          style={{
-            position: 'absolute',
-            left: -400,
-            right: -400,
-            top: groundTopPx,
-            height: groundH,
-            background: `linear-gradient(${comp.rakeAngle}deg, rgba(0,0,0,0) 40%, ${preset.lightColor} 50%, rgba(0,0,0,0) 60%)`,
-            opacity: lightOpacity * 1.2,
-            mixBlendMode: 'screen',
-            transform: `translateX(${netDrift * 70 - 35 + sweepPx}px)`,
-          }}
-        />
-        {preset.glintTravel && (
-          <div
-            style={{
-              position: 'absolute',
-              left: -500,
-              right: -500,
-              top: groundTopPx,
-              height: groundH,
-              background: `linear-gradient(${comp.rakeAngle + 30}deg, rgba(0,0,0,0) 46%, ${preset.lightCore} 50%, rgba(0,0,0,0) 54%)`,
-              opacity: coreOpacity * 0.35,
-              mixBlendMode: 'screen',
-              transform: `translateX(${glintPx}px)`,
-            }}
+          {/* The near bank: a solid mass that occludes the middle distance,
+              with only its crest cut open. */}
+          <path d={geo.bankFill} fill={PLATE.blockDark} opacity={0.94} />
+          <HatchField
+            strokes={geo.bankHatch}
+            t={ramp(p, 0.30, 0.70)}
+            color={PLATE.cut}
+            alpha={0.8}
+            passes={4}
+            modulate={(s) => litness(s.k)}
           />
-        )}
-      </div>
-
-      {/* Soft ambient glow around the light source — breathes and wanders. */}
-      <div
-        style={{
-          position: 'absolute',
-          left: lightX - preset.ambientRadius / 2,
-          top: lightY - preset.ambientRadius / 2,
-          width: preset.ambientRadius,
-          height: preset.ambientRadius,
-          background: `radial-gradient(circle at 50% 50%, ${preset.lightColor} 0%, rgba(0,0,0,0) 58%)`,
-          opacity: lightOpacity * 0.5 * hazeMul,
-          mixBlendMode: 'screen',
-        }}
-      />
-      {/* Tighter bright core for a believable point-source glint. */}
-      <div
-        style={{
-          position: 'absolute',
-          left: lightX - 140,
-          top: lightY - 140,
-          width: 280,
-          height: 280,
-          background: `radial-gradient(circle at 50% 50%, ${preset.lightCore} 0%, rgba(0,0,0,0) 70%)`,
-          opacity: coreOpacity * 0.7,
-          mixBlendMode: 'screen',
-        }}
-      />
-
-      {/* Ruined skyline silhouette at the horizon (fire / dusk). */}
-      {preset.skyline && comp.skylinePts.length > 0 && (
-        <svg
-          width={1920}
-          height={1080}
-          viewBox="0 0 1920 1080"
-          style={{ position: 'absolute', inset: 0, transform: `translateY(${horizonWobble}px)` }}
-        >
-          <polygon
-            points={
-              comp.skylinePts
-                .map((h, i) => {
-                  const x = (i / (comp.skylinePts.length - 1)) * 1920;
-                  return `${x},${comp.horizonY - h}`;
-                })
-                .join(' ') + ` 1920,${comp.horizonY} 0,${comp.horizonY}`
-            }
-            fill={preset.groundBottom}
-            opacity={0.85 * settle}
+          <InkPath
+            d={geo.bankLine.d}
+            len={geo.bankLine.len}
+            t={ramp(p, 0.22, 0.52)}
+            color={PLATE.cut}
+            width={1.8}
+            opacity={0.72}
+          />
+          <HatchField
+            strokes={geo.foreFlicks}
+            t={ramp(p, 0.42, 0.8)}
+            color={PLATE.cut}
+            alpha={0.22}
+            passes={4}
           />
         </svg>
-      )}
+      </AbsoluteFill>
 
-      {/* Crisp moon disc, distinct from the ambient light glow (night). */}
-      {preset.moon && (
-        <div
+      {/* ---------------- the key light in the scene ---------------- */}
+      <AbsoluteFill
+        style={{
+          background: `radial-gradient(ellipse 46% 52% at ${(spec.keyX * 100).toFixed(1)}% ${(spec.keyY * 100).toFixed(1)}%, ${spec.key}${Math.round(lerp(10, 42, intensity)).toString(16).padStart(2, '0')} 0%, rgba(0,0,0,0) 62%)`,
+          mixBlendMode: 'screen',
+          opacity: 0.5 + 0.5 * ramp(p, 0.0, 0.3),
+          pointerEvents: 'none',
+        }}
+      />
+
+      {mood === 'fire' ? (
+        // The burning-city beat: a low ember glow that breathes, quantised so
+        // it flickers like a flame rather than pulsing like an LED.
+        <AbsoluteFill
           style={{
-            position: 'absolute',
-            left: lightX - 46,
-            top: lightY - 46,
-            width: 92,
-            height: 92,
-            borderRadius: '50%',
-            background: `radial-gradient(circle at 38% 34%, ${preset.lightCore} 0%, ${preset.lightColor} 62%, rgba(0,0,0,0) 100%)`,
-            opacity: 0.8 * settle * flickerMul,
-            boxShadow: `0 0 60px 18px ${preset.lightColor}33`,
+            background: `radial-gradient(ellipse 80% 34% at 50% 88%, rgba(196,98,31,${(0.16 + 0.10 * Math.abs(Math.sin(onNs(frame, 3) * 0.21))).toFixed(3)}) 0%, rgba(0,0,0,0) 70%)`,
+            mixBlendMode: 'screen',
+            pointerEvents: 'none',
           }}
         />
-      )}
-
-      {/* Dust / ember motes: two depth layers with independent net drift
-          (progress) and continuous sway (seconds) for real parallax. */}
-      <svg
-        width={1920}
-        height={1080}
-        viewBox="0 0 1920 1080"
-        style={{ position: 'absolute', inset: 0 }}
-      >
-        {motes.map((m, i) => {
-          const sway = Math.sin((t * TAU) / m.swayPeriod + m.phase) * m.swayAmp;
-          const travel = netDrift * m.driftDist;
-          const x = m.x + Math.cos(m.driftAngle) * travel + sway * (m.layer === 1 ? 1 : 0.6);
-          const y = m.y + Math.sin(m.driftAngle) * travel + (m.layer === 0 ? Math.cos((t * TAU) / (m.swayPeriod * 1.7) + m.phase) * m.swayAmp * 0.4 : 0);
-          if (x < -20 || x > 1940 || y < -20 || y > 1100) return null;
-          const fade = inSafeAreaFade(y);
-          const flick =
-            preset.flicker > 0.3 ? 0.82 + 0.18 * Math.sin((t * TAU) / (m.swayPeriod * 0.6) + m.phase * 1.7) : 1;
-          const op =
-            m.opacityBase * intensityMoteScale(intensity) * settle * (1 - 0.6 * fade) * flick;
-          const color = m.colorAlt ? preset.moteColorAlt : preset.moteColor;
-          return (
-            <g key={i}>
-              <circle cx={x} cy={y} r={m.r * 2.6} fill={color} opacity={op * 0.16} />
-              <circle cx={x} cy={y} r={m.r} fill={color} opacity={op} />
-            </g>
-          );
-        })}
-      </svg>
-
-      {/* Safe-area calm: dim the subtitle band and the title band so text
-          stays legible over whatever mood is active. */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          top: 1080 - SAFE_AREA.bottom,
-          height: SAFE_AREA.bottom,
-          background: 'linear-gradient(180deg, rgba(2,1,1,0) 0%, rgba(2,1,1,0.62) 60%, rgba(2,1,1,0.82) 100%)',
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          background: `radial-gradient(ellipse 62% 20% at 50% ${
-            (((SAFE_AREA.titleBandTop + SAFE_AREA.titleBandBottom) / 2) / 1080) * 100
-          }%, rgba(2,1,1,0.16) 0%, rgba(2,1,1,0) 100%)`,
-        }}
-      />
-
-      {/* Deep vignette. */}
-      <AbsoluteFill
-        style={{
-          background:
-            'radial-gradient(ellipse 60% 56% at 50% 44%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.82) 100%)',
-        }}
-      />
-    </AbsoluteFill>
+      ) : null}
+    </Plate>
   );
 };
-
-function intensityMoteScale(intensity: number) {
-  return lerp(0.6, 1.2, intensity);
-}
-
-// Softens motes/bands as they approach the subtitle safe area (near bottom).
-function inSafeAreaFade(y: number) {
-  const start = 1080 - SAFE_AREA.bottom - 60;
-  if (y < start) return 0;
-  return clamp((y - start) / (1080 - start), 0, 1);
-}
-
-export default ExcavationField;
