@@ -97,21 +97,40 @@ function buildComposition(id) {
   const bgDark2 = hsla(hue - 6, between(rng, 30, 50), between(rng, 6, 11), 1);
 
   // --- glow blobs -----------------------------------------------------------
-  const glowCount = template === 'central-glow' ? 1 + Math.floor(rng() * 2) : 2 + Math.floor(rng() * 3);
+  // A primary "light source" glow (brighter, with a small hot core) plus a
+  // few softer secondary glows, so every composition has a clear focal point
+  // rather than reading as a flat blur.
+  const glowCount = template === 'central-glow' ? 2 + Math.floor(rng() * 2) : 3 + Math.floor(rng() * 3);
   const glows = [];
+  let primaryGx = 50;
+  let primaryGy = 45;
   for (let i = 0; i < glowCount; i++) {
     const gx =
       template === 'central-glow'
-        ? between(rng, 35, 65)
+        ? between(rng, 32, 68)
         : template === 'trench-cut'
         ? between(rng, 40, 60)
         : between(rng, 5, 95);
-    const gy = template === 'central-glow' ? between(rng, 30, 55) : between(rng, 5, 95);
-    const size = template === 'central-glow' ? between(rng, 45, 75) : between(rng, 18, 42);
+    const gy = template === 'central-glow' ? between(rng, 26, 58) : between(rng, 5, 95);
+    const size = template === 'central-glow' ? between(rng, 40, 68) : between(rng, 16, 38);
     const glowHue = hue + between(rng, -10, 10);
-    const glowSat = between(rng, 55, 85);
-    const glowLight = between(rng, 38, 60);
-    const glowAlpha = between(rng, 0.16, 0.4);
+    const glowSat = between(rng, 58, 88);
+    const isPrimary = i === 0;
+    const glowLight = isPrimary ? between(rng, 52, 68) : between(rng, 34, 54);
+    const glowAlpha = isPrimary ? between(rng, 0.32, 0.55) : between(rng, 0.14, 0.32);
+    if (isPrimary) {
+      primaryGx = gx;
+      primaryGy = gy;
+      // bright hot core at the light source, fading fast into the wider glow
+      glows.push(
+        `radial-gradient(circle at ${gx.toFixed(1)}% ${gy.toFixed(1)}%, ${hsla(
+          glowHue + 6,
+          Math.min(95, glowSat + 8),
+          Math.min(88, glowLight + 22),
+          between(rng, 0.35, 0.55)
+        )} 0%, transparent 14%)`
+      );
+    }
     glows.push(
       `radial-gradient(circle at ${gx.toFixed(1)}% ${gy.toFixed(1)}%, ${hsla(
         glowHue,
@@ -121,6 +140,49 @@ function buildComposition(id) {
       )} 0%, ${hsla(glowHue, glowSat, glowLight, 0)} ${size.toFixed(0)}%)`
     );
   }
+
+  // --- ember / dust motes ----------------------------------------------------
+  // Small bright specks scattered mostly above the midline — reads as rising
+  // embers or dust in a lantern beam, and breaks up any flat gradient areas.
+  const emberCount = 8 + Math.floor(rng() * 10);
+  const embers = [];
+  for (let i = 0; i < emberCount; i++) {
+    const ex = between(rng, 2, 98);
+    const ey = between(rng, 2, 72);
+    const er = between(rng, 0.12, 0.55);
+    const emberHue = hue + between(rng, -6, 14);
+    const emberAlpha = between(rng, 0.25, 0.6);
+    embers.push(
+      `radial-gradient(circle at ${ex.toFixed(2)}% ${ey.toFixed(2)}%, ${hsla(
+        emberHue,
+        75,
+        between(rng, 62, 85),
+        emberAlpha
+      )} 0%, transparent ${er.toFixed(2)}%)`
+    );
+  }
+
+  // --- soft godrays -----------------------------------------------------------
+  // A repeating-conic-gradient spoke pattern centered on the primary glow,
+  // blended with 'screen' so it only ever brightens — a soft suggestion of
+  // light breaking through dust/haze, used on most (not all) compositions.
+  const hasRays = rng() < 0.7;
+  const rayCount = 8 + Math.floor(rng() * 6);
+  const raySpread = 360 / rayCount;
+  const rayWidth = raySpread * between(rng, 0.18, 0.35);
+  const rayRotation = Math.floor(between(rng, 0, 360));
+  const rayAlpha = between(rng, 0.05, 0.11);
+  const rays = hasRays
+    ? {
+        cx: primaryGx,
+        cy: primaryGy,
+        css: `repeating-conic-gradient(from ${rayRotation}deg at ${primaryGx.toFixed(
+          1
+        )}% ${primaryGy.toFixed(1)}%, ${hsla(hue + 8, 60, 75, rayAlpha)} 0deg ${rayWidth.toFixed(
+          1
+        )}deg, transparent ${rayWidth.toFixed(1)}deg ${raySpread.toFixed(1)}deg)`,
+      }
+    : null;
 
   // --- strata / trench bands ------------------------------------------------
   const bands = [];
@@ -158,15 +220,35 @@ function buildComposition(id) {
     };
   }
 
+  // --- faint horizon line ------------------------------------------------
+  // Even templates without full strata bands get a single soft horizon line
+  // — a quiet nod to the dig-site/strata motif that ties the whole set
+  // together without repeating the same layout everywhere.
+  let horizon = null;
+  if (template === 'central-glow' || template === 'scatter-glow' || (template === 'trench-cut' && rng() < 0.6)) {
+    horizon = {
+      top: between(rng, 62, 82),
+      color: hsla(hue - 4, 30, between(rng, 10, 16), between(rng, 0.4, 0.65)),
+      glow: hsla(hue + 4, 60, 55, between(rng, 0.1, 0.2)),
+    };
+  }
+
   // --- vignette ---------------------------------------------------------------
   const vignetteCx = between(rng, 35, 65);
   const vignetteCy = between(rng, 30, 60);
-  const vignetteStrength = between(rng, 0.55, 0.78);
+  const vignetteStrength = between(rng, 0.58, 0.8);
 
   // --- grain --------------------------------------------------------------
+  // Two passes: a fine monochrome film-grain pass, and a larger, warm-tinted
+  // "canvas" turbulence pass for a painterly texture (nods to the video's
+  // "painterly brushwork" style cue) blended with soft-light.
   const grainFreq = between(rng, 0.55, 1.4);
-  const grainOpacity = between(rng, 0.05, 0.1);
+  const grainOpacity = between(rng, 0.08, 0.16);
   const grainSeed = Math.floor(rng() * 1000);
+  const canvasFreq = between(rng, 0.012, 0.035);
+  const canvasOpacity = between(rng, 0.14, 0.26);
+  const canvasSeed = Math.floor(rng() * 1000);
+  const canvasHue = hue + between(rng, -6, 10);
 
   return {
     template,
@@ -175,14 +257,21 @@ function buildComposition(id) {
     bgDark1,
     bgDark2,
     glows,
+    embers,
+    rays,
     bands,
     trench,
+    horizon,
     vignetteCx,
     vignetteCy,
     vignetteStrength,
     grainFreq,
     grainOpacity,
     grainSeed,
+    canvasFreq,
+    canvasOpacity,
+    canvasSeed,
+    canvasHue,
   };
 }
 
@@ -223,6 +312,20 @@ function buildHtml(img) {
     : '';
 
   const glowLayer = comp.glows.join(',\n      ');
+  const emberLayer = comp.embers.join(',\n      ');
+
+  const horizonDiv = comp.horizon
+    ? `
+    <div style="
+      position:absolute; left:0; width:100%; top:${comp.horizon.top.toFixed(2)}%; height:2px;
+      background: ${comp.horizon.color};
+      box-shadow: 0 -22px 40px -10px ${comp.horizon.glow}, 0 1px 0 rgba(0,0,0,0.5);
+    "></div>`
+    : '';
+
+  const raysDiv = comp.rays
+    ? `<div class="rays" style="background-image: ${comp.rays.css};"></div>`
+    : '';
 
   return `<!doctype html>
 <html>
@@ -238,10 +341,20 @@ function buildHtml(img) {
     background-image: linear-gradient(${comp.bgAngle}deg, ${comp.bgDark1} 0%, ${comp.bgDark2} 100%);
     overflow: hidden;
   }
+  .rays {
+    position: absolute; inset: 0;
+    mix-blend-mode: screen;
+  }
   .glows {
     position: absolute; inset: 0;
     background-image:
       ${glowLayer};
+  }
+  .embers {
+    position: absolute; inset: 0;
+    background-image:
+      ${emberLayer};
+    mix-blend-mode: screen;
   }
   .vignette {
     position: absolute; inset: 0;
@@ -253,6 +366,11 @@ function buildHtml(img) {
     position: absolute; inset: -5%;
     opacity: ${comp.grainOpacity.toFixed(3)};
     mix-blend-mode: overlay;
+  }
+  .canvas-texture {
+    position: absolute; inset: -5%;
+    opacity: ${comp.canvasOpacity.toFixed(3)};
+    mix-blend-mode: soft-light;
   }
   .label {
     position: absolute; left: 56px; bottom: 46px;
@@ -281,9 +399,25 @@ function buildHtml(img) {
 </head>
 <body>
   <div class="stage">
+    ${horizonDiv}
     ${bandDivs}
     ${trenchDiv}
+    ${raysDiv}
     <div class="glows"></div>
+    <div class="embers"></div>
+    <svg class="canvas-texture" width="100%" height="100%">
+      <filter id="c">
+        <feTurbulence type="fractalNoise" baseFrequency="${comp.canvasFreq.toFixed(
+          4
+        )}" numOctaves="3" seed="${comp.canvasSeed}" stitchTiles="stitch" />
+        <feColorMatrix type="matrix" values="
+          0 0 0 0 ${(0.5 + comp.canvasHue / 360).toFixed(2)}
+          0 0 0 0 ${(0.32).toFixed(2)}
+          0 0 0 0 ${(0.12).toFixed(2)}
+          0 0 0 1 0" />
+      </filter>
+      <rect width="100%" height="100%" filter="url(#c)" />
+    </svg>
     <svg class="grain" width="100%" height="100%">
       <filter id="n">
         <feTurbulence type="fractalNoise" baseFrequency="${comp.grainFreq.toFixed(
