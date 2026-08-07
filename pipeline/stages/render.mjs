@@ -162,6 +162,7 @@ function styleSandbox(slug, styleId, timing, visualsForStyle) {
  */
 export async function compareStyles({
   slug, styleIds, visualsFor, seconds = 60, composition = DEFAULT_COMPOSITION, concurrency = null,
+  pending = [],
 }) {
   const timing = JSON.parse(readFileSync(overlayTiming(slug), 'utf8'));
   const window = pickSampleWindow(timing, seconds);
@@ -190,6 +191,11 @@ export async function compareStyles({
       results.push({ styleId, ok: false, error: err.message });
     }
   }
+
+  // Styles that will not be rendered still belong on the sheet, so the reason
+  // is visible next to the ones that were — added before the sheet is written,
+  // not after it.
+  for (const p of pending) results.push({ styleId: p.styleId, ok: false, error: p.reason });
 
   const indexPath = path.join(dest, 'index.html');
   writeFileSync(indexPath, contactSheet({ slug, timing, window, results }));

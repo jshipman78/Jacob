@@ -212,10 +212,12 @@ async function main() {
     const rows = stageStatus(slug, STAGES);
     process.stdout.write(`\n${bold(opts.topic)}  ${dim(rel(workDir(slug)))}\n\n`);
     for (const r of rows) {
-      process.stdout.write(
-        `  ${r.present ? green('✔') : dim('·')} ${r.stage.padEnd(11)}` +
-          `${r.present ? dim(`${r.key}  ${r.generatedAt}`) : dim('not run')}\n`
-      );
+      // render and citations derive straight from the narration overlay rather
+      // than caching an artifact, so "not run" would misreport them as work
+      // still owed.
+      const uncached = ['render', 'citations'].includes(r.stage);
+      const detail = r.present ? `${r.key}  ${r.generatedAt}` : uncached ? 'not cached — runs every time' : 'not run';
+      process.stdout.write(`  ${r.present ? green('✔') : dim('·')} ${r.stage.padEnd(11)}${dim(detail)}\n`);
     }
     process.stdout.write('\n');
     return;
@@ -367,18 +369,40 @@ async function main() {
     if (opts.compareStyles) {
       stageStart('compare-styles', `${opts.compareSeconds}s per style`);
       const layer = probeSceneLayer();
-      const renderable = STYLE_IDS.filter((id) => layer.styles.includes(id));
+      // A style only changes the picture if the scene layer resolves by scene
+      // kind. While it resolves by Troy shot id, every style renders the same
+      // frames for a generated topic — so render one and say so, rather than
+      // producing four identical files under four different names and letting
+      // someone conclude the styles look alike.
+      const differentiates = layer.keying === 'scene-kind';
+      const renderable = differentiates
+        ? STYLE_IDS.filter((id) => layer.styles.includes(id))
+        : [plan.effectiveStyleId];
       const skipped = STYLE_IDS.filter((id) => !renderable.includes(id));
-      if (skipped.length) {
+
+      if (!differentiates) {
+        warn(
+          'The scene layer cannot differentiate styles for a generated topic yet (it resolves scenes by ' +
+            'shot id, keyed to the Troy shots), so all four styles would render identical frames. ' +
+            `Rendering "${plan.effectiveStyleId}" only; the rest are marked pending in the contact sheet. ` +
+            'See docs/scene-layer-contract.md — this becomes a real four-way comparison as soon as ' +
+            'src/scenes/ reads shot.scene.'
+        );
+      } else if (skipped.length) {
         warn(
           `Only ${renderable.length} of ${STYLE_IDS.length} styles are implemented by the scene layer. ` +
             `Skipping ${skipped.join(', ')} — rendering them now would produce identical clips under different ` +
             'names, which is worse than saying so. They appear in the contact sheet marked as pending.'
         );
       }
+      const pendingReason = differentiates
+        ? 'Not yet implemented by src/scenes/.'
+        : 'Pending: the scene layer resolves scenes by shot id, so this style cannot yet differ from the one rendered.';
+
       results.compare = await compareStyles({
         slug,
         styleIds: renderable,
+        pending: skipped.map((styleId) => ({ styleId, reason: pendingReason })),
         seconds: opts.compareSeconds,
         composition: opts.composition,
         concurrency: opts.concurrency,
@@ -393,9 +417,6 @@ async function main() {
             })
           ).data,
       });
-      for (const id of skipped) {
-        results.compare.results.push({ styleId: id, ok: false, error: 'Not yet implemented by src/scenes/.' });
-      }
       stageEnd('compare-styles', rel(results.compare.indexPath));
     } else {
       stageStart('render', opts.preview ? `preview, first ${opts.preview}s` : `${timing.durationSec.toFixed(0)}s`);
