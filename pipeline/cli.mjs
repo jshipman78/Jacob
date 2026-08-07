@@ -35,12 +35,13 @@ import { claimsStage } from './stages/claims.mjs';
 import { factcheckStage, applyVerdicts } from './stages/factcheck.mjs';
 import { scriptStage } from './stages/script.mjs';
 import { verifyStage, assertVerifyPassed } from './stages/verify.mjs';
+import { reviseStage } from './stages/revise.mjs';
 import { visualsStage } from './stages/visuals.mjs';
 import { narrateStage } from './stages/narrate.mjs';
 import { renderVideo, compareStyles, assertComposition, pickSampleWindow, secondsToFrames, DEFAULT_COMPOSITION } from './stages/render.mjs';
 import { buildCitations, writeCitations, writeTranscript } from './stages/citations.mjs';
 
-export const STAGES = ['research', 'claims', 'factcheck', 'script', 'verify', 'visuals', 'narrate', 'render', 'citations'];
+export const STAGES = ['research', 'claims', 'factcheck', 'script', 'verify', 'revise', 'visuals', 'narrate', 'render', 'citations'];
 
 // ---------------------------------------------------------------------------
 // Arguments
@@ -62,6 +63,7 @@ function parseArgs(argv) {
     only: null,
     refresh: [],
     allowFindings: false,
+    fixFindings: true,
     noRender: false,
     status: false,
     listStyles: false,
@@ -98,6 +100,7 @@ function parseArgs(argv) {
       case 'only': o.only = value; break;
       case 'refresh': o.refresh = value.split(',').map((s) => s.trim()).filter(Boolean); break;
       case 'allow-findings': o.allowFindings = true; break;
+      case 'no-fix-findings': o.fixFindings = false; break;
       case 'no-render': o.noRender = true; break;
       default:
         throw new PipelineError(`Unknown option "--${key}".`, 'Run with --help for the supported flags.');
@@ -148,6 +151,8 @@ ${bold('RUNNING PARTS OF IT')}
   --preview[=<seconds>]   Render only the first N seconds. Default 30. Fast end-to-end check.
   --no-render             Stop after narration; still writes citations.
   --allow-findings        Proceed even when the narration audit raises high-severity findings.
+  --no-fix-findings       Do not apply the audit's own suggested corrections (they are applied by
+                          default, then the revised script is audited again).
 
 ${bold('OTHER')}
   --composition=<id>      Remotion composition to render. Default ${DEFAULT_COMPOSITION}.
@@ -282,21 +287,52 @@ async function main() {
     force: forced('script') && shouldRun('script'),
   });
 
-  // --- 5. verify ---------------------------------------------------------
-  const verify = await verifyStage({
+  // --- 5. verify (and, where the audit supplies a fix, apply it) ----------
+  let verify = await verifyStage({
     ...common,
     script: script.data,
     scriptKey: script.key,
     verifiedClaims,
     force: forced('verify') && shouldRun('verify'),
   });
+
+  // The audit writes a specific replacement sentence for every finding. Left
+  // unapplied, that is wasted: the build stops and the only options are to
+  // reroll a whole section and hope, or to wave the finding through. Applying
+  // the correction the auditor already wrote is strictly better than both, and
+  // the revised script is then audited again rather than trusted.
+  let finalScript = script.data;
+  let finalScriptKey = script.key;
+  if (opts.fixFindings && verify.data.findings.some((f) => f.severity !== 'low')) {
+    const revised = await reviseStage({
+      slug,
+      script: script.data,
+      scriptKey: script.key,
+      verify: verify.data,
+      verifyKey: verify.key,
+      model: opts.model,
+      force: forced('revise'),
+    });
+    if (revised.data.applied > 0) {
+      finalScript = revised.data.script;
+      finalScriptKey = revised.key;
+      verify = await verifyStage({
+        ...common,
+        script: finalScript,
+        scriptKey: finalScriptKey,
+        verifiedClaims,
+        stageName: 'verify-revised',
+        force: forced('verify'),
+      });
+    }
+  }
   assertVerifyPassed(verify.data, { allowFindings: opts.allowFindings });
 
   // --- 6. visuals --------------------------------------------------------
   const visuals = await visualsStage({
     ...common,
-    script: script.data,
-    scriptKey: script.key,
+    script: finalScript,
+    scriptKey: finalScriptKey,
     style: styleForContent,
     force: forced('visuals') && shouldRun('visuals'),
   });
@@ -305,8 +341,8 @@ async function main() {
   const narration = await narrateStage({
     slug,
     topic: opts.topic,
-    script: script.data,
-    scriptKey: script.key,
+    script: finalScript,
+    scriptKey: finalScriptKey,
     visuals: visuals.data,
     visualsKey: visuals.key,
     styleId: styleForContent.id,
@@ -391,18 +427,18 @@ async function main() {
     claims: claims.data,
     factcheck: factcheck.data,
     verifiedClaims,
-    script: script.data,
+    script: finalScript,
     verify: verify.data,
     styleId: plan.effectiveStyleId,
   });
   const { mdPath, jsonPath } = writeCitations({ slug, citations });
-  const transcriptPath = writeTranscript({ slug, script: script.data, timing });
+  const transcriptPath = writeTranscript({ slug, script: finalScript, timing });
   stageEnd('citations', rel(mdPath));
 
   // --- report ------------------------------------------------------------
   const cost = costSoFar();
-  process.stdout.write(`\n${bold(green('Done.'))} ${bold(script.data.title)}\n\n`);
-  info(`${dim('thesis    ')} ${script.data.thesis}`);
+  process.stdout.write(`\n${bold(green('Done.'))} ${bold(finalScript.title)}\n\n`);
+  info(`${dim('thesis    ')} ${finalScript.thesis}`);
   info(`${dim('runtime   ')} ${Math.floor(narration.data.durationSec / 60)}:${String(Math.round(narration.data.durationSec % 60)).padStart(2, '0')} · ${narration.data.sentenceCount} sentences · ${narration.data.shotCount} shots`);
   info(`${dim('accuracy  ')} ${citations.summary.claimsCited} claims cited (${citations.summary.established} established, ${citations.summary.disputed} disputed), ${citations.summary.droppedUnsupported} cut, ${citations.summary.auditFindings} audit findings`);
   info(`${dim('style     ')} requested ${styleForContent.id}${plan.supported ? '' : ` → rendered ${plan.effectiveStyleId} (scene layer)`}`);

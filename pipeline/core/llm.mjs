@@ -45,6 +45,9 @@ export const WEB_TOOLS = ['WebSearch', 'WebFetch', 'ToolSearch'];
 export const DENIED_TOOLS = [
   'Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep',
   'Task', 'Agent', 'Skill', 'TodoWrite', 'KillBash', 'BashOutput',
+  // Not destructive, but a writing stage reaching for these means it has
+  // misread the assignment — and Artifact publishes to a URL.
+  'Artifact', 'ScheduleWakeup', 'SendMessage', 'AskUserQuestion',
 ];
 
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
@@ -274,7 +277,12 @@ export async function callClaudeJson({ validate = () => [], attempts = 3, ...opt
     const problems = validate(data) ?? [];
     if (problems.length === 0) return { data, ...rest };
     lastProblem = problems.map((p) => `- ${p}`).join('\n');
-    warn(`${opts.label}: ${problems.length} schema problem(s) (attempt ${attempt}/${attempts}) — retrying.`);
+    warn(`${opts.label}: rejected (attempt ${attempt}/${attempts}) — retrying.`);
+    // Print the actual complaints. A run that only reports "2 schema problems"
+    // gives you no way to tell a model that needs another go from a validator
+    // that is wrong, which is the difference between waiting and fixing.
+    for (const problem of problems.slice(0, 6)) step(dim(`   ${problem}`));
+    if (problems.length > 6) step(dim(`   …and ${problems.length - 6} more`));
   }
   throw new PipelineError(
     `The ${opts.label} stage could not produce valid structured output after ${attempts} attempts.`,

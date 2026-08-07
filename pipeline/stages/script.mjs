@@ -146,10 +146,18 @@ function validateSection({ section, budget, allowedClaims, isFinalSection }) {
     }
 
     // --- repeated openings ---
+    // Repeated openings are a tic — except when both sentences are short, where
+    // the repetition is anaphora and is the single most effective device in the
+    // house style ("He wasn't an archaeologist. He wasn't a historian."). A rule
+    // that forbids what the exemplars demonstrate is a broken rule.
     const firsts = all.map((s) => words(s.text)[0]?.toLowerCase().replace(/[^a-z']/g, '') ?? '');
     for (let i = 1; i < firsts.length; i++) {
-      if (firsts[i] && firsts[i] === firsts[i - 1]) {
-        p.push(`Two consecutive sentences both begin with "${firsts[i]}". Vary the opening.`);
+      const anaphora = lens[i] <= 9 && lens[i - 1] <= 9;
+      if (firsts[i] && firsts[i] === firsts[i - 1] && !anaphora) {
+        p.push(
+          `Two consecutive sentences both begin with "${firsts[i]}" and neither is short enough for that to ` +
+            'read as deliberate repetition. Vary the opening, or make both of them short and pointed.'
+        );
         break;
       }
     }
@@ -175,9 +183,14 @@ function validateSection({ section, budget, allowedClaims, isFinalSection }) {
     }
 
     // --- length ---
+    // Short sections need proportionally more slack: a 60-word cold open cannot
+    // hit the shape the house style demands (long accumulation, reversal,
+    // staccato, question) inside ±30%, and rejecting good work for being 12
+    // words long is how a validator starts fighting the writer.
     const total = all.reduce((n, s) => n + wordCount(s.text), 0);
-    const lo = Math.round(budget.wordBudget * 0.7);
-    const hi = Math.round(budget.wordBudget * 1.3);
+    const slack = budget.wordBudget < 120 ? 0.55 : 0.3;
+    const lo = Math.round(budget.wordBudget * (1 - slack));
+    const hi = Math.round(budget.wordBudget * (1 + slack));
     if (total < lo) p.push(`Section is ${total} words; the budget is ~${budget.wordBudget} (minimum ${lo}). Develop it further.`);
     if (total > hi) p.push(`Section is ${total} words; the budget is ~${budget.wordBudget} (maximum ${hi}). Cut.`);
 
@@ -310,7 +323,9 @@ export async function scriptStage({
     slug,
     stage: 'script',
     version: SCRIPT_VERSION,
-    inputs: { topic, claimsKey, factcheckKey, minutes, style: style.id, model, channel: CHANNEL.theme },
+    // Not keyed on the visual style either: the narration is the same words
+    // whichever way the film is drawn. See the note in claims.mjs.
+    inputs: { topic, claimsKey, factcheckKey, minutes, model, channel: CHANNEL.theme },
     force,
     detail: `${plan.sections.length} sections`,
     async produce() {

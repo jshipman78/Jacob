@@ -107,10 +107,12 @@ Return an empty findings array if the script genuinely holds up.
 `.trim();
 }
 
-export async function verifyStage({ slug, topic, script, scriptKey, verifiedClaims, force = false, model = 'sonnet' }) {
+export async function verifyStage({
+  slug, topic, script, scriptKey, verifiedClaims, force = false, model = 'sonnet', stageName = 'verify',
+}) {
   return runStage({
     slug,
-    stage: 'verify',
+    stage: stageName,
     version: VERIFY_VERSION,
     inputs: { topic, scriptKey, model },
     force,

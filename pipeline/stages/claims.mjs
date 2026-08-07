@@ -119,7 +119,6 @@ ${sourceBlock}
 
 HISTORIOGRAPHY: ${research.historiography}
 CAUTIONS FROM RESEARCH: ${(research.cautions ?? []).join(' | ') || '(none recorded)'}
-VISUAL STYLE FOR THIS FILM: ${style.label} — ${style.summary}
 
 STRUCTURE TO FILL (${budget.totalWords} words total)
 ${sectionPlan}
@@ -177,7 +176,12 @@ export async function claimsStage({ slug, topic, research, researchKey, minutes,
     slug,
     stage: 'claims',
     version: CLAIMS_VERSION,
-    inputs: { topic, researchKey, minutes, style: style.id, model },
+    // Deliberately NOT keyed on the visual style. What a documentary argues,
+    // and what survives a fact-check, cannot depend on how it is drawn — and
+    // making it depend on that means changing --style silently discards an
+    // hour of research and fact-checking. Style enters at the visuals stage,
+    // which is exactly where it belongs.
+    inputs: { topic, researchKey, minutes, model },
     force,
     detail: `${budget.sections.length} sections · ${budget.totalWords} words`,
     async produce() {
