@@ -69,19 +69,22 @@ export const Subtitles: React.FC<SubtitlesProps> = ({ sentences, fps }) => {
   }, [sentences]);
 
   const current = useMemo(() => {
-    // Chunks are in ascending time order; find the last one whose window
-    // contains `t`. A simple reverse scan is plenty fast for a few hundred
-    // chunks evaluated per frame.
+    // Chunks are in ascending time order; find the most recent chunk that
+    // has actually started (start <= t) and is still within its display
+    // window. Deliberately does NOT pre-claim the upcoming chunk's lead-in
+    // fade window — that would cut the still-fading-out previous chunk off
+    // early whenever chunks are back-to-back. A simple reverse scan is
+    // plenty fast for a few hundred chunks evaluated per frame.
     for (let i = chunks.length - 1; i >= 0; i--) {
       const c = chunks[i];
-      if (t >= c.start - SUBTITLE_FADE_SEC && t <= c.displayEnd) {
-        return c;
+      if (c.start > t) {
+        continue;
       }
-      if (c.start <= t) {
-        // Chunks are sorted by start; once we've passed below `t` with no
-        // match, no earlier chunk can match either.
-        break;
-      }
+      // `c` is the nearest chunk that has started by time `t`. If it's
+      // still within its display window, show it; otherwise we're in a
+      // silence longer than the hold, and no earlier chunk can match
+      // either (they all started even earlier), so stop.
+      return t <= c.displayEnd ? c : null;
     }
     return null;
   }, [chunks, t]);
