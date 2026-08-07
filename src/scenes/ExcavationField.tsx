@@ -50,6 +50,14 @@ function lerpColor(c1: string, c2: string, t: number): [number, number, number] 
   const b = hexToRgb(c2);
   return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 }
+function shade(c: [number, number, number], amt: number): [number, number, number] {
+  // amt > 0 lightens toward 255, amt < 0 darkens toward 0.
+  return c.map((ch) => clamp(amt >= 0 ? lerp(ch, 255, amt) : lerp(ch, 0, -amt), 0, 255)) as [
+    number,
+    number,
+    number
+  ];
+}
 
 type MoodPreset = {
   skyTop: string;
@@ -57,6 +65,7 @@ type MoodPreset = {
   groundTop: string;
   groundBottom: string;
   lightColor: string;
+  lightCore: string;
   moteColor: string;
   moteColorAlt: string;
   strataA: string;
@@ -64,120 +73,133 @@ type MoodPreset = {
   baseMotes: number;
   moteSize: [number, number];
   lightStrength: number; // 0-1 relative
+  coreStrength: number; // 0-1, bright point-glint strength
   driftAngleDeg: [number, number]; // range motes drift toward (0 = right, -90 = up)
   driftDistance: [number, number]; // px over full shot
   horizonRange: [number, number]; // fraction of height
-  contrastLift: number; // extra brightness on strata highlights
+  grainOpacity: number;
 };
 
 const MOOD_PRESETS: Record<ExcavationMood, MoodPreset> = {
   fire: {
-    skyTop: '#1c0805',
-    skyHorizon: '#a8390f',
-    groundTop: '#2a0f07',
-    groundBottom: '#0c0503',
-    lightColor: '#ff7a3d',
+    skyTop: '#0c0402',
+    skyHorizon: '#230a05',
+    groundTop: '#190905',
+    groundBottom: '#050201',
+    lightColor: '#e35a1f',
+    lightCore: '#ffb066',
     moteColor: '#ffb066',
     moteColorAlt: '#ff5a2b',
-    strataA: '#3c140a',
-    strataB: '#1a0805',
-    baseMotes: 70,
-    moteSize: [1.4, 4.2],
-    lightStrength: 0.95,
+    strataA: '#341409',
+    strataB: '#130703',
+    baseMotes: 64,
+    moteSize: [1.4, 4],
+    lightStrength: 0.55,
+    coreStrength: 0.55,
     driftAngleDeg: [-100, -80],
     driftDistance: [140, 320],
     horizonRange: [0.58, 0.72],
-    contrastLift: 0.22,
+    grainOpacity: 0.05,
   },
   candle: {
-    skyTop: '#0a0806',
-    skyHorizon: '#171009',
-    groundTop: '#120c08',
-    groundBottom: '#050403',
-    lightColor: '#f0b96a',
+    skyTop: '#050403',
+    skyHorizon: '#0a0705',
+    groundTop: '#0a0705',
+    groundBottom: '#020201',
+    lightColor: '#b8823a',
+    lightCore: '#f4cf8e',
     moteColor: '#e7b66a',
     moteColorAlt: '#caa25a',
-    strataA: '#1c140b',
-    strataB: '#0c0906',
-    baseMotes: 16,
-    moteSize: [0.8, 2.2],
-    lightStrength: 0.55,
+    strataA: '#170f08',
+    strataB: '#080502',
+    baseMotes: 14,
+    moteSize: [0.8, 2],
+    lightStrength: 0.4,
+    coreStrength: 0.5,
     driftAngleDeg: [-95, -85],
-    driftDistance: [30, 70],
-    horizonRange: [0.7, 0.86],
-    contrastLift: 0.1,
+    driftDistance: [26, 60],
+    horizonRange: [0.72, 0.88],
+    grainOpacity: 0.04,
   },
   dust: {
-    skyTop: '#332a1e',
-    skyHorizon: '#8a6f45',
-    groundTop: '#4a3a26',
-    groundBottom: '#170f09',
-    lightColor: '#e8c98a',
+    skyTop: '#110c07',
+    skyHorizon: '#241a0f',
+    groundTop: '#241a0f',
+    groundBottom: '#0a0704',
+    lightColor: '#b89a5e',
+    lightCore: '#e8c98a',
     moteColor: '#d8c39a',
-    moteColorAlt: '#c9b483',
-    strataA: '#5a4830',
-    strataB: '#2c2013',
-    baseMotes: 110,
-    moteSize: [1, 3],
-    lightStrength: 0.6,
+    moteColorAlt: '#a68f61',
+    strataA: '#3a2c19',
+    strataB: '#140e08',
+    baseMotes: 92,
+    moteSize: [1, 2.8],
+    lightStrength: 0.42,
+    coreStrength: 0.28,
     driftAngleDeg: [-70, -30],
     driftDistance: [90, 220],
     horizonRange: [0.5, 0.62],
-    contrastLift: 0.16,
+    grainOpacity: 0.07,
   },
   night: {
-    skyTop: '#040810',
-    skyHorizon: '#0f1f30',
-    groundTop: '#0c141c',
-    groundBottom: '#04070a',
-    lightColor: '#bcd8ea',
+    skyTop: '#020408',
+    skyHorizon: '#071120',
+    groundTop: '#070d15',
+    groundBottom: '#020304',
+    lightColor: '#5f7f9c',
+    lightCore: '#d8ecf7',
     moteColor: '#a9c4d8',
     moteColorAlt: '#7d97ab',
-    strataA: '#101c26',
-    strataB: '#060b0f',
-    baseMotes: 34,
-    moteSize: [0.8, 2.4],
-    lightStrength: 0.4,
+    strataA: '#0c1721',
+    strataB: '#03060a',
+    baseMotes: 30,
+    moteSize: [0.8, 2.2],
+    lightStrength: 0.32,
+    coreStrength: 0.6,
     driftAngleDeg: [-30, 10],
     driftDistance: [60, 160],
     horizonRange: [0.6, 0.74],
-    contrastLift: 0.08,
+    grainOpacity: 0.03,
   },
   gold: {
-    skyTop: '#3a2a10',
-    skyHorizon: '#caa04a',
-    groundTop: '#4a3413',
-    groundBottom: '#160f06',
-    lightColor: '#f6da8f',
+    skyTop: '#130c04',
+    skyHorizon: '#33220a',
+    groundTop: '#2e1e09',
+    groundBottom: '#0a0602',
+    lightColor: '#c99a3f',
+    lightCore: '#f6da8f',
     moteColor: '#f0d38f',
     moteColorAlt: '#d9b872',
-    strataA: '#6b4e1e',
-    strataB: '#2c1f0c',
-    baseMotes: 60,
-    moteSize: [1, 3.4],
-    lightStrength: 0.85,
+    strataA: '#523810',
+    strataB: '#1c1204',
+    baseMotes: 54,
+    moteSize: [1, 3.2],
+    lightStrength: 0.55,
+    coreStrength: 0.6,
     driftAngleDeg: [-100, -70],
     driftDistance: [60, 150],
     horizonRange: [0.62, 0.78],
-    contrastLift: 0.24,
+    grainOpacity: 0.05,
   },
   dusk: {
-    skyTop: '#2a2038',
-    skyHorizon: '#c98a4b',
-    groundTop: '#231a12',
-    groundBottom: '#08060a',
-    lightColor: '#e7ab6a',
+    skyTop: '#130e1c',
+    skyHorizon: '#3a2313',
+    groundTop: '#160f0a',
+    groundBottom: '#040305',
+    lightColor: '#c67a3f',
+    lightCore: '#eab06a',
     moteColor: '#cbb98e',
-    moteColorAlt: '#9a8570',
-    strataA: '#2e2214',
-    strataB: '#120d09',
-    baseMotes: 22,
-    moteSize: [1, 2.6],
-    lightStrength: 0.5,
+    moteColorAlt: '#8f7a68',
+    strataA: '#22170c',
+    strataB: '#0c0807',
+    baseMotes: 18,
+    moteSize: [1, 2.4],
+    lightStrength: 0.4,
+    coreStrength: 0.35,
     driftAngleDeg: [-60, -20],
     driftDistance: [40, 100],
     horizonRange: [0.34, 0.42],
-    contrastLift: 0.1,
+    grainOpacity: 0.04,
   },
 };
 
@@ -205,9 +227,9 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, seed, options 
   const comp = useMemo(() => {
     const rng = mulberry32(seedInt);
     const horizonY = lerp(preset.horizonRange[0], preset.horizonRange[1], rng()) * 1080;
-    const lightX = lerp(0.14, 0.86, rng()) * 1920;
-    const lightY = lerp(0.08, 0.42, rng()) * 1080;
-    const rakeAngle = lerp(96, 132, rng()); // deg, raking light sweep
+    const lightX = lerp(0.12, 0.88, rng()) * 1920;
+    const lightY = lerp(0.06, 0.4, rng()) * 1080;
+    const rakeAngle = lerp(20, 55, rng()); // deg, raking light sweep across ground
     const bandCount = 6 + Math.floor(rng() * 3); // 6-8 strata bands
     return { horizonY, lightX, lightY, rakeAngle, bandCount };
   }, [seedInt, preset]);
@@ -227,7 +249,7 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, seed, options 
         phase: rng() * Math.PI * 2,
         swayAmp: lerp(4, 22, rng()),
         colorAlt: rng() > 0.6,
-        opacityBase: lerp(0.25, 0.9, rng()),
+        opacityBase: lerp(0.35, 1, rng()),
       });
     }
     return list;
@@ -244,11 +266,13 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, seed, options 
       const remaining = comp.bandCount - i;
       const h = Math.max(18, (total - (cursor - top)) / remaining) * lerp(0.75, 1.25, rng());
       const t = rng();
+      const shadeAmt = lerp(-0.12, 0.14, rng());
       bands.push({
         top: cursor,
         height: h,
         colorMix: t,
-        opacity: lerp(0.35, 0.85, rng()),
+        shadeAmt,
+        opacity: lerp(0.55, 1, rng()),
       });
       cursor += h;
     }
@@ -260,33 +284,41 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, seed, options 
   const settle = 1 - Math.pow(1 - revealIn, 3);
   const drift = progress; // 0..1 linear across the whole shot, no wrap
 
-  const lightOpacity = preset.lightStrength * lerp(0.5, 1, intensity) * settle;
+  const lightOpacity = preset.lightStrength * lerp(0.55, 1, intensity) * settle;
+  const coreOpacity = preset.coreStrength * lerp(0.5, 1, intensity) * settle;
+
+  const groundTopPx = comp.horizonY;
+  const groundH = 1080 - groundTopPx;
 
   return (
-    <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: PALETTE_INK }}>
-      {/* Sky */}
+    <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#030202' }}>
+      {/* Sky: deep and mostly flat, just a whisper of warmth near the
+          horizon. The mood's real color comes from the light glow below. */}
       <AbsoluteFill
         style={{
-          background: `linear-gradient(180deg, ${preset.skyTop} 0%, ${preset.skyHorizon} ${
-            (comp.horizonY / 1080) * 100
-          }%, ${preset.groundTop} ${(comp.horizonY / 1080) * 100 + 0.1}%)`,
+          background: `linear-gradient(180deg, ${preset.skyTop} 0%, ${preset.skyTop} 55%, ${preset.skyHorizon} 100%)`,
         }}
       />
 
       {/* Ground base gradient, subtly scaling for a near-imperceptible parallax. */}
-      <AbsoluteFill
+      <div
         style={{
-          top: comp.horizonY,
-          height: 1080 - comp.horizonY,
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: groundTopPx,
+          height: groundH,
           background: `linear-gradient(180deg, ${preset.groundTop} 0%, ${preset.groundBottom} 100%)`,
           transform: `scale(${1 + 0.012 * drift})`,
           transformOrigin: '50% 0%',
         }}
       />
 
-      {/* Strata banding. */}
+      {/* Strata banding — distinct sediment layers, each independently
+          shaded off the two mood base tones. */}
       {strataBands.map((b, i) => {
-        const [r, g, bl] = lerpColor(preset.strataA, preset.strataB, b.colorMix);
+        const base = lerpColor(preset.strataA, preset.strataB, b.colorMix);
+        const [r, g, bl] = shade(base, b.shadeAmt);
         return (
           <div
             key={i}
@@ -296,44 +328,76 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, seed, options 
               right: 0,
               top: b.top,
               height: b.height,
-              background: rgbToStr(
-                [r, g, bl],
-                b.opacity * (0.55 + 0.45 * settle) * (1 - 0.35 * inSafeAreaFade(b.top))
-              ),
-              borderTop: `1px solid rgba(255,235,200,${0.05 + preset.contrastLift * 0.3})`,
+              background: rgbToStr([r, g, bl], b.opacity * (0.6 + 0.4 * settle)),
+              borderTop: `1px solid rgba(255,235,200,0.06)`,
+              boxShadow: 'inset 0 6px 10px -6px rgba(0,0,0,0.5)',
             }}
           />
         );
       })}
 
-      {/* Raking light beam. */}
+      {/* Fine soil grain — a cheap static repeating gradient, not a
+          per-frame filter, kept subtle and multiply-blended. */}
       <div
         style={{
           position: 'absolute',
-          left: comp.lightX - 900,
-          top: comp.lightY - 900,
-          width: 1800,
-          height: 1800,
-          background: `radial-gradient(circle at 50% 50%, ${preset.lightColor} 0%, rgba(0,0,0,0) 60%)`,
-          opacity: lightOpacity * 0.5,
-          mixBlendMode: 'screen',
-          transform: `translateX(${drift * 26 - 13}px)`,
+          left: 0,
+          right: 0,
+          top: groundTopPx,
+          height: groundH,
+          opacity: preset.grainOpacity,
+          mixBlendMode: 'overlay',
+          background:
+            'repeating-linear-gradient(115deg, rgba(255,255,255,0.5) 0px, rgba(255,255,255,0.5) 1px, rgba(0,0,0,0.4) 1px, rgba(0,0,0,0.4) 3px)',
         }}
       />
+
+      {/* Raking light across the ground — a tight angled highlight band,
+          clipped to the ground so it reads as light grazing the earth
+          rather than a wash over the whole frame. */}
       <div
         style={{
           position: 'absolute',
-          left: '-20%',
-          top: '-20%',
-          width: '140%',
-          height: '140%',
-          background: `linear-gradient(${comp.rakeAngle}deg, rgba(0,0,0,0) 38%, ${preset.lightColor}22 50%, rgba(0,0,0,0) 62%)`,
-          opacity: lightOpacity,
+          left: -400,
+          right: -400,
+          top: groundTopPx,
+          height: groundH,
+          background: `linear-gradient(${comp.rakeAngle}deg, rgba(0,0,0,0) 42%, ${preset.lightColor} 50%, rgba(0,0,0,0) 58%)`,
+          opacity: lightOpacity * 0.6,
+          mixBlendMode: 'screen',
+          transform: `translateX(${drift * 40 - 20}px)`,
+        }}
+      />
+
+      {/* Soft ambient glow around the light source. */}
+      <div
+        style={{
+          position: 'absolute',
+          left: comp.lightX - 560,
+          top: comp.lightY - 560,
+          width: 1120,
+          height: 1120,
+          background: `radial-gradient(circle at 50% 50%, ${preset.lightColor} 0%, rgba(0,0,0,0) 58%)`,
+          opacity: lightOpacity * 0.45,
+          mixBlendMode: 'screen',
+        }}
+      />
+      {/* Tighter bright core for a believable point-source glint. */}
+      <div
+        style={{
+          position: 'absolute',
+          left: comp.lightX - 140,
+          top: comp.lightY - 140,
+          width: 280,
+          height: 280,
+          background: `radial-gradient(circle at 50% 50%, ${preset.lightCore} 0%, rgba(0,0,0,0) 70%)`,
+          opacity: coreOpacity * 0.7,
           mixBlendMode: 'screen',
         }}
       />
 
-      {/* Dust / ember motes. */}
+      {/* Dust / ember motes, each with a soft low-opacity halo behind a
+          brighter core — a cheap stand-in for a blur filter. */}
       <svg
         width={1920}
         height={1080}
@@ -347,19 +411,19 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, seed, options 
           const y = m.y + Math.sin(m.driftAngle) * travel;
           if (x < -20 || x > 1940 || y < -20 || y > 1100) return null;
           const fade = inSafeAreaFade(y);
-          const op = m.opacityBase * intensityMoteScale(intensity) * settle * (1 - 0.55 * fade);
+          const op = m.opacityBase * intensityMoteScale(intensity) * settle * (1 - 0.6 * fade);
           const color = m.colorAlt ? preset.moteColorAlt : preset.moteColor;
-          return <circle key={i} cx={x} cy={y} r={m.r} fill={color} opacity={op} />;
+          return (
+            <g key={i}>
+              <circle cx={x} cy={y} r={m.r * 2.6} fill={color} opacity={op * 0.16} />
+              <circle cx={x} cy={y} r={m.r} fill={color} opacity={op} />
+            </g>
+          );
         })}
       </svg>
 
       {/* Safe-area calm: dim the subtitle band and the title band so text
           stays legible over whatever mood is active. */}
-      <AbsoluteFill
-        style={{
-          background: `linear-gradient(180deg, rgba(4,3,2,0) 0%, rgba(4,3,2,0) 70%, rgba(4,3,2,0.55) 100%)`,
-        }}
-      />
       <div
         style={{
           position: 'absolute',
@@ -367,7 +431,7 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, seed, options 
           right: 0,
           top: 1080 - SAFE_AREA.bottom,
           height: SAFE_AREA.bottom,
-          background: 'linear-gradient(180deg, rgba(3,2,2,0) 0%, rgba(3,2,2,0.62) 55%, rgba(3,2,2,0.78) 100%)',
+          background: 'linear-gradient(180deg, rgba(2,1,1,0) 0%, rgba(2,1,1,0.68) 55%, rgba(2,1,1,0.85) 100%)',
         }}
       />
       <div
@@ -377,7 +441,7 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, seed, options 
           right: 0,
           top: SAFE_AREA.titleBandTop,
           height: SAFE_AREA.titleBandBottom - SAFE_AREA.titleBandTop,
-          background: 'rgba(3,2,2,0.18)',
+          background: 'rgba(2,1,1,0.22)',
         }}
       />
 
@@ -385,17 +449,15 @@ export const ExcavationField: React.FC<SceneProps> = ({ progress, seed, options 
       <AbsoluteFill
         style={{
           background:
-            'radial-gradient(ellipse 62% 58% at 50% 46%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.72) 100%)',
+            'radial-gradient(ellipse 60% 56% at 50% 44%, rgba(0,0,0,0) 42%, rgba(0,0,0,0.82) 100%)',
         }}
       />
     </AbsoluteFill>
   );
 };
 
-const PALETTE_INK = '#08060a';
-
 function intensityMoteScale(intensity: number) {
-  return lerp(0.55, 1.15, intensity);
+  return lerp(0.6, 1.2, intensity);
 }
 
 // Softens motes/bands as they approach the subtitle safe area (near bottom).
