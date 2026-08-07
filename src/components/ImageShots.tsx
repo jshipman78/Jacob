@@ -17,7 +17,7 @@ const clamp = (value: number, min: number, max: number) =>
 type KenBurnsImageProps = {
   imageId: string;
   // Frame relative to the shot's own true start (0 at the shot's first
-  // frame), independent of any crossfade sequence-extension offset.
+  // frame), independent of the crossfade lead-in extension.
   frame: number;
   shotDurationFrames: number;
   zoomIn: boolean;
@@ -92,38 +92,36 @@ const KenBurnsImage: React.FC<KenBurnsImageProps> = ({
 type ShotLayerProps = {
   shot: ShotTiming;
   index: number;
-  // Both expressed relative to this layer's own <Sequence from=...>, i.e.
-  // the frame at which the shot's true (non-crossfade-extended) window
-  // starts/ends within this sequence's local time.
+  // Frame (relative to this layer's own <Sequence from=...>) at which the
+  // shot's true start falls — the sequence itself begins earlier, during
+  // the crossfade lead-in.
   localStartFrame: number;
-  localEndFrame: number;
+  shotDurationFrames: number;
   crossfadeFrames: number;
 };
 
+/**
+ * Renders one shot. Only fades ITSELF in (from 0 to full opacity, ending
+ * exactly at its own true start) and otherwise stays fully opaque — it
+ * never fades itself out. The next shot's fade-in is what visually covers
+ * this one, which keeps the dissolve a clean linear cross-blend instead of
+ * two independently-fading translucent layers double-darkening against the
+ * black backdrop underneath.
+ */
 const ShotLayer: React.FC<ShotLayerProps> = ({
   shot,
   index,
   localStartFrame,
-  localEndFrame,
+  shotDurationFrames,
   crossfadeFrames,
 }) => {
-  // useCurrentFrame() inside a <Sequence> is already relative to that
-  // sequence's `from` — shift it again so 0 lands on the shot's true start.
   const sequenceLocalFrame = useCurrentFrame();
   const frame = sequenceLocalFrame - localStartFrame;
-  const shotDurationFrames = localEndFrame - localStartFrame;
 
-  const opacity = interpolate(
-    frame,
-    [
-      -crossfadeFrames / 2,
-      crossfadeFrames / 2,
-      shotDurationFrames - crossfadeFrames / 2,
-      shotDurationFrames + crossfadeFrames / 2,
-    ],
-    [0, 1, 1, 0],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
+  const opacity = interpolate(frame, [-crossfadeFrames, 0], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
   const zoomAmount = clamp(
     KEN_BURNS_RATE_PER_SEC * (shot.end - shot.start),
@@ -159,15 +157,19 @@ export const ImageShots: React.FC<ImageShotsProps> = ({
   totalDurationInFrames,
 }) => {
   const crossfadeFrames = Math.round(SHOT_CROSSFADE_SEC * fps);
-  const halfCrossfadeFrames = Math.round(crossfadeFrames / 2);
 
   const layers = useMemo(() => {
     return shots.map((shot, index) => {
       const startFrame = Math.round(shot.start * fps);
-      const endFrame = Math.round(shot.end * fps);
-      const seqFrom = Math.max(0, startFrame - halfCrossfadeFrames);
-      const seqEnd = Math.min(totalDurationInFrames, endFrame + halfCrossfadeFrames);
-      const seqDuration = Math.max(1, seqEnd - seqFrom);
+      const endFrame = Math.min(
+        totalDurationInFrames,
+        Math.round(shot.end * fps)
+      );
+      // Extend backward only, so this shot's fade-in can begin before its
+      // official start — it never needs to render past its own true end,
+      // because the following shot's fade-in fully covers it by then.
+      const seqFrom = Math.max(0, startFrame - crossfadeFrames);
+      const seqDuration = Math.max(1, endFrame - seqFrom);
 
       return (
         <Sequence
@@ -180,13 +182,13 @@ export const ImageShots: React.FC<ImageShotsProps> = ({
             shot={shot}
             index={index}
             localStartFrame={startFrame - seqFrom}
-            localEndFrame={endFrame - seqFrom}
+            shotDurationFrames={endFrame - startFrame}
             crossfadeFrames={crossfadeFrames}
           />
         </Sequence>
       );
     });
-  }, [shots, fps, crossfadeFrames, halfCrossfadeFrames, totalDurationInFrames]);
+  }, [shots, fps, crossfadeFrames, totalDurationInFrames]);
 
   return <AbsoluteFill style={{ backgroundColor: '#000' }}>{layers}</AbsoluteFill>;
 };
