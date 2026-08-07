@@ -402,27 +402,27 @@ export const ArtifactPlate: React.FC<SceneProps> = ({ progress, frame, fps, seed
   const phase2 = useMemo(() => rng() * TAU, [rng]);
   const plateJitter = useMemo(() => ({ dx: (rng() - 0.5) * 24 }), [rng]);
 
-  // Fit the artifact's bounding box to a large, consistent window so it
-  // reads as the subject of the frame — never a detail lost in it. The
-  // window's bottom sits well clear of the subtitle safe area.
+  // Fit the artifact's bounding box to a large window, then center it
+  // within the usable area (roughly y=80..800, above the subtitle band)
+  // rather than pinning it to the top — so every artifact, regardless of
+  // its natural proportions, sits with a comfortable margin above and a
+  // clear gap to the catalogue label below.
   const bbox = ARTIFACT_BBOX[artifact];
-  const topMargin = 46;
-  const bottomMargin = 1080 - SAFE_AREA.bottom - 60; // comfortable clearance above subtitles
+  const windowTop = 80;
+  const windowBottom = 800;
+  const minMargin = 100; // guaranteed clearance above the artifact's top
+  const availH = windowBottom - windowTop - minMargin * 2;
   const leftMargin = 170;
   const rightMargin = 1920 - 170;
-  const availH = bottomMargin - topMargin;
   const availW = rightMargin - leftMargin;
   const fitScale = Math.min(availH / (bbox.bottom - bbox.top), availW / (bbox.right - bbox.left));
-  const heightFilled = (bbox.bottom - bbox.top) * fitScale >= availH - 1;
   const originX = 960 + plateJitter.dx;
-  const originY = heightFilled
-    ? topMargin - bbox.top * fitScale
-    : (topMargin + bottomMargin) / 2 - ((bbox.top + bbox.bottom) / 2) * fitScale;
+  const originY = (windowTop + windowBottom) / 2 - ((bbox.top + bbox.bottom) / 2) * fitScale;
 
   const ringCX = originX;
-  const ringCY = originY + ((bbox.top + bbox.bottom) / 2) * fitScale;
+  const ringCY = originY + ((bbox.top + bbox.bottom) / 2) * fitScale; // == (windowTop+windowBottom)/2
   const halfSpan = Math.max(bbox.right - bbox.left, bbox.bottom - bbox.top) * fitScale * 0.5;
-  const plateR = clamp(halfSpan * 1.14 + 64, 300, 620);
+  const plateR = clamp(halfSpan * 1.14 + 64, 260, 380);
 
   const dustMotes = useMemo(() => {
     const n = 16;
