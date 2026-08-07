@@ -163,7 +163,9 @@ export const AegeanMap: React.FC<SceneProps> = ({ progress, frame, fps, seed, op
   }, [seedInt]);
 
   // --- Reveal stages ---------------------------------------------------
-  const coastDraw = easeInOutCubic(remap01(progress, 0.0, 0.4));
+  // easeOut (not easeInOut) so the very first strokes appear promptly
+  // rather than holding on black while the ease ramps up.
+  const coastDraw = easeOutCubic(remap01(progress, 0.0, 0.4));
   const landFade = easeOutCubic(remap01(progress, 0.05, 0.42));
   const hachureFade = easeOutCubic(remap01(progress, 0.22, 0.5));
   const waterFade = easeOutCubic(remap01(progress, 0.18, 0.46));
@@ -177,24 +179,39 @@ export const AegeanMap: React.FC<SceneProps> = ({ progress, frame, fps, seed, op
   const siteLabelsFade = easeOutCubic(remap01(progress, 0.5, 0.72));
   const scaleBarFade = easeOutCubic(remap01(progress, 0.6, 0.8));
 
-  // Gentle push toward the site — a subtle finishing zoom that arrives only
-  // after the coastline has drawn and the labels have landed.
-  const pushT = easeInOutCubic(remap01(progress, 0.6, 1.0));
-  const kBase = focus === 'site' ? 2.35 : 1.0;
-  const k = kBase * lerp(0.95, 1.0, pushT);
+  // Camera: a continuous ease toward Hisarlik across the WHOLE shot, not a
+  // late-arriving flourish. 'site' shots visibly travel from a regional
+  // establishing view down onto the mound; 'region' shots get a gentle,
+  // continuous push that never fully stops. Because this is driven straight
+  // off `progress`, two nearby progress samples are always visibly
+  // different — the chart is always slowly on the move.
+  const cameraT = easeInOutCubic(progress);
+  const kStart = focus === 'site' ? 0.95 : 0.82;
+  const kEnd = focus === 'site' ? 2.4 : 1.0;
+  const k = lerp(kStart, kEnd, cameraT);
 
-  // Camera target: always centred on the mound, but re-projected to a
-  // different screen anchor per focus so the framing reads correctly at
-  // each scale. Both anchors sit in the SAFE_AREA "lower pocket" (below the
-  // title band, above the subtitle band) — see layout notes below.
-  const anchorScreen = focus === 'site' ? { x: 1180, y: 748 } : { x: 826, y: 738 };
-  const camX = anchorScreen.x - HISARLIK.x * k;
-  const camY = anchorScreen.y - HISARLIK.y * k;
+  // The anchor stays vertically pinned inside the SAFE_AREA "lower pocket"
+  // (below the title band, above the subtitle band) throughout, so the
+  // marker/label never drift through the forbidden middle band; the
+  // horizontal anchor carries the re-centering half of the move.
+  const anchorY = focus === 'site' ? 748 : 738;
+  const anchorXStart = focus === 'site' ? 940 : 900;
+  const anchorXEnd = focus === 'site' ? 1180 : 826;
+  const anchorX = lerp(anchorXStart, anchorXEnd, cameraT);
+  const camX = anchorX - HISARLIK.x * k;
+  const camY = anchorY - HISARLIK.y * k;
   const cameraTransform = `translate(${camX},${camY}) scale(${k})`;
 
   // Slow idle life on the marker ring once revealed — a small, continuous
   // breathing motion so a long hold never looks frozen.
   const idle = Math.sin((frame / fps) * ((Math.PI * 2) / 7)) * 0.5 + 0.5;
+
+  // A slow, continuous survey-sweep and a faintly crawling graticule —
+  // driven by `frame` rather than `progress`, so the chart keeps a quiet
+  // pulse of life through any hold, independent of the shot's own length.
+  const sweepAngle = ((frame / fps) * (360 / 26)) % 360;
+  const graticuleCrawl = (frame / fps) * 5;
+  const sweepEnvelope = easeOutCubic(remap01(progress, 0.05, 0.25));
 
   return (
     <AbsoluteFill style={{ backgroundColor: PALETTE.ink, overflow: 'hidden' }}>
@@ -207,9 +224,24 @@ export const AegeanMap: React.FC<SceneProps> = ({ progress, frame, fps, seed, op
 
       <svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{ position: 'absolute', inset: 0 }}>
         <defs>
-          <linearGradient id="mapVignetteTop" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={PALETTE.ink} stopOpacity={0.7} />
+          {/* Feathered contrast relief for the title-safe band — a soft
+              falloff rather than a hard-edged seam. */}
+          <linearGradient
+            id="titleBandFade"
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1={SAFE_AREA.titleBandTop - 50}
+            x2="0"
+            y2={SAFE_AREA.titleBandBottom + 50}
+          >
+            <stop offset="0%" stopColor={PALETTE.ink} stopOpacity={0} />
+            <stop offset="18%" stopColor={PALETTE.ink} stopOpacity={0.32} />
+            <stop offset="82%" stopColor={PALETTE.ink} stopOpacity={0.32} />
             <stop offset="100%" stopColor={PALETTE.ink} stopOpacity={0} />
+          </linearGradient>
+          <linearGradient id="subtitleBandFade" gradientUnits="userSpaceOnUse" x1="0" y1={1080 - SAFE_AREA.bottom - 60} x2="0" y2={1080 - SAFE_AREA.bottom + 40}>
+            <stop offset="0%" stopColor={PALETTE.ink} stopOpacity={0} />
+            <stop offset="100%" stopColor={PALETTE.ink} stopOpacity={0.6} />
           </linearGradient>
         </defs>
 
@@ -220,6 +252,34 @@ export const AegeanMap: React.FC<SceneProps> = ({ progress, frame, fps, seed, op
 
         {/* Camera-transformed chart content */}
         <g transform={cameraTransform}>
+          {/* Graticule — faint drifting grid, textural rather than literal */}
+          <g opacity={0.1 * hachureFade} strokeDasharray="3 10">
+            {[420, 820, 1220, 1620].map((gx) => (
+              <line
+                key={`gv-${gx}`}
+                x1={gx}
+                y1={-100}
+                x2={gx}
+                y2={1200}
+                stroke={PALETTE.bone}
+                strokeWidth={1}
+                strokeDashoffset={graticuleCrawl}
+              />
+            ))}
+            {[260, 560, 860, 1160].map((gy) => (
+              <line
+                key={`gh-${gy}`}
+                x1={-100}
+                y1={gy}
+                x2={2000}
+                y2={gy}
+                stroke={PALETTE.bone}
+                strokeWidth={1}
+                strokeDashoffset={-graticuleCrawl}
+              />
+            ))}
+          </g>
+
           {/* Land fills */}
           <path d={ANATOLIA_FILL} fill={PALETTE.soilWarm} opacity={0.6 * landFade} />
           <path d={ANATOLIA_FILL} fill={PALETTE.soil} opacity={0.35 * landFade} />
@@ -283,17 +343,10 @@ export const AegeanMap: React.FC<SceneProps> = ({ progress, frame, fps, seed, op
           </GeoAnchor>
         </g>
 
-        {/* Contrast relief across the section-title safe band */}
-        <rect
-          x={0}
-          y={SAFE_AREA.titleBandTop}
-          width={1920}
-          height={SAFE_AREA.titleBandBottom - SAFE_AREA.titleBandTop}
-          fill={PALETTE.ink}
-          opacity={0.32}
-        />
-        {/* Contrast relief across the subtitle safe band */}
-        <rect x={0} y={1080 - SAFE_AREA.bottom} width={1920} height={SAFE_AREA.bottom} fill={PALETTE.ink} opacity={0.6} />
+        {/* Contrast relief across the section-title safe band, feathered */}
+        <rect x={0} y={SAFE_AREA.titleBandTop - 50} width={1920} height={SAFE_AREA.titleBandBottom - SAFE_AREA.titleBandTop + 100} fill="url(#titleBandFade)" />
+        {/* Contrast relief across the subtitle safe band, feathered at its top edge */}
+        <rect x={0} y={1080 - SAFE_AREA.bottom - 60} width={1920} height={SAFE_AREA.bottom + 60} fill="url(#subtitleBandFade)" />
 
         {/* Chart frame */}
         <rect
@@ -307,47 +360,58 @@ export const AegeanMap: React.FC<SceneProps> = ({ progress, frame, fps, seed, op
           strokeWidth={1}
         />
 
-        {/* Compass mark, top-left */}
-        <g transform="translate(190,150)" opacity={0.4 * easeOutCubic(remap01(progress, 0.1, 0.3))}>
-          <line x1={0} y1={20} x2={0} y2={-20} stroke={PALETTE.bone} strokeWidth={1} />
-          <path d="M0,-20 L-5,-10 L5,-10 Z" fill={PALETTE.bone} />
-          <text x={0} y={38} fill={PALETTE.bone} fontFamily="Inter, sans-serif" fontSize={12} letterSpacing={2} textAnchor="middle">
-            N
-          </text>
+        {/* Compass mark with a slow survey-sweep — a quiet, continuous
+            living detail evoking a surveyor's instrument, independent of
+            the reveal timeline. */}
+        <g transform="translate(190,150)">
+          <circle r={34} fill="none" stroke={PALETTE.ash} strokeOpacity={0.22 * sweepEnvelope} strokeWidth={1} />
+          <g opacity={0.5 * sweepEnvelope} style={{ transformOrigin: '0px 0px' }} transform={`rotate(${sweepAngle})`}>
+            <defs>
+              <linearGradient id="sweepGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor={PALETTE.goldBright} stopOpacity={0} />
+                <stop offset="100%" stopColor={PALETTE.goldBright} stopOpacity={0.55} />
+              </linearGradient>
+            </defs>
+            <line x1={0} y1={0} x2={34} y2={0} stroke="url(#sweepGrad)" strokeWidth={1.2} />
+          </g>
+          <g opacity={0.4 * easeOutCubic(remap01(progress, 0.1, 0.3))}>
+            <line x1={0} y1={20} x2={0} y2={-20} stroke={PALETTE.bone} strokeWidth={1} />
+            <path d="M0,-20 L-5,-10 L5,-10 Z" fill={PALETTE.bone} />
+            <text x={0} y={48} fill={PALETTE.bone} fontFamily="Inter, sans-serif" fontSize={12} letterSpacing={2} textAnchor="middle">
+              N
+            </text>
+          </g>
         </g>
       </svg>
 
-      {/* HTML labels for crisp type */}
+      {/* HTML labels for crisp type — world-anchored via worldToScreen so
+          they pan and zoom with the camera exactly like the chart beneath
+          them, then held at a constant on-screen size. */}
       {showLabels && (
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-          {focus === 'region' && (
-            <>
-              <Label
-                left={1560 * (k / kBase) + camX - (1560 - 1560)}
-                top={250}
-                text="SEA OF MARMARA"
-                size={14}
-                spacing={4}
-                color={PALETTE.bone}
-                opacity={0.55 * seaLabelsFade}
-                weight={500}
-                fixedScreen
-              />
-              <Label left={410} top={758} text="AEGEAN SEA" size={14} spacing={4} color={PALETTE.bone} opacity={0.55 * seaLabelsFade} weight={500} fixedScreen />
-              <Label
-                left={dardanellesScreen(camX, camY, k).x}
-                top={dardanellesScreen(camX, camY, k).y}
-                text="THE DARDANELLES"
-                size={15}
-                spacing={3.5}
-                color={PALETTE.goldBright}
-                opacity={0.7 * seaLabelsFade}
-                weight={600}
-                rotate={-27}
-                fixedScreen
-              />
-            </>
-          )}
+          {focus === 'region' &&
+            (() => {
+              const marmara = worldToScreen(1520, 230, camX, camY, k);
+              const aegean = worldToScreen(430, 800, camX, camY, k);
+              const dardanelles = worldToScreen(1150, 335, camX, camY, k);
+              return (
+                <>
+                  <Label left={marmara.x} top={marmara.y} text="SEA OF MARMARA" size={14} spacing={4} color={PALETTE.bone} opacity={0.55 * seaLabelsFade} weight={500} />
+                  <Label left={aegean.x} top={aegean.y} text="AEGEAN SEA" size={14} spacing={4} color={PALETTE.bone} opacity={0.55 * seaLabelsFade} weight={500} />
+                  <Label
+                    left={dardanelles.x}
+                    top={dardanelles.y}
+                    text="THE DARDANELLES"
+                    size={15}
+                    spacing={3.5}
+                    color={PALETTE.goldBright}
+                    opacity={0.7 * seaLabelsFade}
+                    weight={600}
+                    rotate={-27}
+                  />
+                </>
+              );
+            })()}
 
           {(() => {
             const troadPt = worldToScreen(TROAD_LABEL_PT.x, TROAD_LABEL_PT.y, camX, camY, k);
@@ -406,10 +470,6 @@ export const AegeanMap: React.FC<SceneProps> = ({ progress, frame, fps, seed, op
 
 function worldToScreen(x: number, y: number, camX: number, camY: number, k: number) {
   return { x: x * k + camX, y: y * k + camY };
-}
-
-function dardanellesScreen(camX: number, camY: number, k: number) {
-  return worldToScreen(1150, 335, camX, camY, k);
 }
 
 const Label: React.FC<{

@@ -12,12 +12,18 @@ import { SAFE_AREA, PALETTE } from './types';
  * earth column, oldest city at the bottom, most recent at the top, each
  * band with its own texture and colour temperature.
  *
+ * The column stays alive for the whole shot: a slow continuous camera sink
+ * through the stack, fine sediment sifting down through the section, a
+ * highlighted layer breathing with warm light, and leader-lines that draw
+ * themselves in rather than pop.
+ *
  * options:
  *   highlight?: string | string[]  — layer id(s) ('I'..'IX', plus 'VIIa' /
  *     'VIIb') to bring forward with a warm glow while others recede.
  *   mode?: 'intact' | 'destroyed'  — in 'destroyed', the upper layers are
- *     shown gouged away, with the removed material left as faint ghost
- *     outlines, illustrating what Schliemann's dig destroyed.
+ *     actively gouged and crumble away over the shot, with the removed
+ *     material left as faint ghost outlines, illustrating what Schliemann's
+ *     dig destroyed.
  */
 
 // ---------------------------------------------------------------------------
@@ -38,9 +44,15 @@ function mulberry32(seed: number) {
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
-const easeInOutCubic = (t: number) => {
-  const x = clamp01(t);
-  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const easeInCubic = (t: number) => Math.pow(clamp01(t), 3);
+
+// A bump function that is 0 at u=0 and u=1 and peaks at 1 in the middle —
+// used so looping particle motion fades out before it wraps, so the wrap
+// itself is never visible.
+const edgeFadeBump = (u: number, fadeFrac = 0.18) => {
+  if (u < fadeFrac) return u / fadeFrac;
+  if (u > 1 - fadeFrac) return (1 - u) / fadeFrac;
+  return 1;
 };
 
 type Texture = 'earth' | 'clay' | 'stone' | 'ash' | 'gold';
@@ -78,6 +90,8 @@ const COL_W = 700;
 const COL_TOP = 108;
 const COL_BOTTOM = 792;
 const COL_H = COL_BOTTOM - COL_TOP;
+const COL_CX = COL_X + COL_W / 2;
+const COL_CY = (COL_TOP + COL_BOTTOM) / 2;
 const LABEL_X = 640; // right-aligned numerals
 const TICK_X0 = 650;
 
@@ -100,15 +114,17 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
 
   // Precompute band vertical extents (bottom-up) and per-band texture, once
   // per seed — not per frame.
+  // Note: `topY`/`bottomY` (not `top`/`bottom`) so these pixel positions
+  // don't collide with LayerDef's `top`/`bottom` colour-gradient stops.
   const bands = useMemo(() => {
     let cursor = COL_BOTTOM;
     return LAYERS.map((layer, i) => {
       const h = (layer.weight / TOTAL_WEIGHT) * COL_H;
-      const bottom = cursor;
-      const top = cursor - h;
-      cursor = top;
+      const bottomY = cursor;
+      const topY = cursor - h;
+      cursor = topY;
       const rand = mulberry32(seedInt + i * 977);
-      return { ...layer, index: i, top, bottom, h, rand };
+      return { ...layer, index: i, topY, bottomY, h, rand };
     });
   }, [seedInt]);
 
@@ -121,7 +137,7 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
       const pts: [number, number][] = [];
       for (let p = 0; p <= points; p++) {
         const x = COL_X + (COL_W * p) / points;
-        const y = b.top + (rand() - 0.5) * amp * 2;
+        const y = b.topY + (rand() - 0.5) * amp * 2;
         pts.push([x, y]);
       }
       let d = `M ${pts[0][0]},${pts[0][1]}`;
@@ -145,7 +161,7 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
       const items: { x: number; y: number; w: number; h: number; c: string; op: number; kind: string }[] = [];
       for (let k = 0; k < count; k++) {
         const x = COL_X + 14 + rand() * (COL_W - 28);
-        const y = b.top + 6 + rand() * Math.max(4, b.h - 12);
+        const y = b.topY + 6 + rand() * Math.max(4, b.h - 12);
         if (b.texture === 'stone') {
           const w = 34 + rand() * 70;
           const h = Math.min(b.h - 8, 14 + rand() * 20);
@@ -167,6 +183,20 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
     });
   }, [bands]);
 
+  // Fine sediment sifting down through the whole section, continuously, for
+  // the entire shot. Each particle loops through the column height but
+  // fades to zero opacity before it wraps, so the wrap is never seen.
+  const sediment = useMemo(() => {
+    const rand = mulberry32(seedInt + 20000);
+    return Array.from({ length: 46 }).map(() => ({
+      x: COL_X + 10 + rand() * (COL_W - 20),
+      phase: rand(),
+      speed: 0.35 + rand() * 0.5, // fall cycles per full progress span
+      r: 0.6 + rand() * 1.4,
+      drift: (rand() - 0.5) * 10,
+    }));
+  }, [seedInt]);
+
   // Reveal: bands materialize bottom (oldest) to top across the first ~55%
   // of the shot's progress, then hold — a slow, one-directional build with
   // no loop.
@@ -177,23 +207,58 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
     return easeOutCubic((progress - start) / (end - start));
   };
 
-  // Highlight emphasis ramps in gently after the structure has settled.
-  const glowT = easeOutCubic((progress - 0.42) / 0.4);
+  // Highlight emphasis ramps in gently after the structure has settled,
+  // then breathes with a slow, tiny-amplitude pulse for the rest of the
+  // shot — present throughout, never distracting.
+  const glowBase = easeOutCubic((progress - 0.4) / 0.35);
+  const glowPulse = 1 + 0.09 * Math.sin(progress * Math.PI * 2 * 2.6);
+  const glowT = glowBase * glowPulse;
 
-  // Destroyed-mode ghost reveal.
-  const ghostT = easeOutCubic((progress - 0.12) / 0.55);
+  // Slow continuous camera sink through the stack, plus an almost
+  // imperceptible breathing scale — alive for the whole shot, not just
+  // during the initial reveal.
+  const camDriftY = -30 * progress;
+  const camScale = 1 + 0.03 * progress + 0.006 * Math.sin(progress * Math.PI * 2 * 1.8);
+  const sceneTransform = `translateY(${camDriftY}px) scale(${camScale})`;
+  const sceneTransformOrigin = `${COL_CX}px ${COL_CY}px`;
 
-  // Which bands are "removed" in destroyed mode: the upper three sub-bands,
-  // i.e. everything above (and including the top of) Troy VIIb.
+  // Destroyed-mode: upper bands are gone; the boundary just below them is
+  // actively being quarried away, crumbling in staggered chunks across
+  // most of the shot rather than settling once into a finished ruin.
+  const ghostT = easeOutCubic((progress - 0.08) / 0.75);
   const removedIds = new Set(['VIII', 'IX']);
   const goutedPartialId = 'VIIb'; // shown partially quarried, not fully gone
+
+  const removedBandsForChunks = useMemo(
+    () => bands.filter((b) => removedIds.has(b.id) || b.id === goutedPartialId),
+    [bands]
+  );
+
+  const crumbleChunks = useMemo(() => {
+    if (mode !== 'destroyed') return [];
+    const rand = mulberry32(seedInt + 33000);
+    const n = 22;
+    return Array.from({ length: n }).map(() => {
+      const band = removedBandsForChunks[Math.floor(rand() * removedBandsForChunks.length)];
+      const originX = COL_X + 20 + rand() * (COL_W - 40);
+      const originY = band.topY + rand() * band.h;
+      const startP = 0.06 + rand() * 0.78;
+      const fallDur = 0.14 + rand() * 0.16;
+      const w = 8 + rand() * 18;
+      const h = 6 + rand() * 12;
+      const rot = (rand() - 0.5) * 70;
+      const drift = (rand() - 0.5) * 90;
+      const fallDist = 260 + rand() * 260;
+      return { originX, originY, startP, fallDur, w, h, rot, drift, fallDist, color: band.bottom };
+    });
+  }, [mode, removedBandsForChunks, seedInt]);
 
   return (
     <AbsoluteFill style={{ backgroundColor: PALETTE.ink, overflow: 'hidden' }}>
       {/* Ambient depth glow behind the column */}
       <AbsoluteFill
         style={{
-          background: `radial-gradient(ellipse 900px 700px at ${COL_X + COL_W / 2}px 500px, ${PALETTE.soilWarm}55 0%, transparent 70%)`,
+          background: `radial-gradient(ellipse 900px 700px at ${COL_CX}px 500px, ${PALETTE.soilWarm}55 0%, transparent 70%)`,
         }}
       />
 
@@ -217,134 +282,198 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
           </linearGradient>
         </defs>
 
-        {/* Column frame */}
-        <rect
-          x={COL_X - 1}
-          y={COL_TOP - 1}
-          width={COL_W + 2}
-          height={COL_H + 2}
-          fill="none"
-          stroke={PALETTE.ash}
-          strokeOpacity={0.35}
-          strokeWidth={1}
-        />
+        <g style={{ transform: sceneTransform, transformOrigin: sceneTransformOrigin }}>
+          {/* Column frame */}
+          <rect
+            x={COL_X - 1}
+            y={COL_TOP - 1}
+            width={COL_W + 2}
+            height={COL_H + 2}
+            fill="none"
+            stroke={PALETTE.ash}
+            strokeOpacity={0.35}
+            strokeWidth={1}
+          />
 
-        {bands.map((b) => {
-          const isHi = highlightSet.has(b.id);
-          const dim = hasHighlight && !isHi;
-          const reveal = revealFor(b.index);
-          const isRemovedInDestroyed = mode === 'destroyed' && removedIds.has(b.id);
-          const isPartialQuarry = mode === 'destroyed' && b.id === goutedPartialId;
+          {bands.map((b) => {
+            const isHi = highlightSet.has(b.id);
+            const dim = hasHighlight && !isHi;
+            const reveal = revealFor(b.index);
+            const isRemovedInDestroyed = mode === 'destroyed' && removedIds.has(b.id);
+            const isPartialQuarry = mode === 'destroyed' && b.id === goutedPartialId;
 
-          // In destroyed mode, removed bands render only as faint ghost
-          // outlines (no solid fill); the partial-quarry band keeps a thin
-          // solid remnant at its base.
-          const fillOpacity = isRemovedInDestroyed
-            ? 0
-            : reveal * (dim ? 0.38 : 1) * (isPartialQuarry ? lerp(1, 0.45, ghostT) : 1);
+            // In destroyed mode, removed bands render only as faint ghost
+            // outlines (no solid fill); the partial-quarry band keeps a
+            // shrinking solid remnant at its base as it's actively cut away.
+            const fillOpacity = isRemovedInDestroyed
+              ? 0
+              : reveal * (dim ? 0.38 : 1) * (isPartialQuarry ? lerp(1, 0.42, ghostT) : 1);
 
-          const bandHeight = isPartialQuarry ? b.h * lerp(1, 0.4, ghostT) : b.h;
-          const bandTop = isPartialQuarry ? b.bottom - bandHeight : b.top;
+            const bandHeight = isPartialQuarry ? b.h * lerp(1, 0.4, ghostT) : b.h;
+            const bandTop = isPartialQuarry ? b.bottomY - bandHeight : b.topY;
 
-          return (
-            <g key={b.id} clipPath="url(#colClip)">
-              <g
-                style={{
-                  opacity: fillOpacity,
-                  transform: `translateY(${(1 - reveal) * 10}px)`,
-                  transformOrigin: `${COL_X + COL_W / 2}px ${b.bottom}px`,
-                }}
-              >
-                <rect x={COL_X} y={bandTop} width={COL_W} height={bandHeight} fill={`url(#grad-${b.id})`} />
-                {speckleData[b.index].map((s, si) =>
-                  s.kind === 'rect' ? (
-                    <rect key={si} x={s.x} y={s.y} width={s.w} height={s.h} fill={s.c} opacity={s.op} rx={2} />
-                  ) : (
-                    <circle key={si} cx={s.x} cy={s.y} r={s.w} fill={s.c} opacity={s.op} />
-                  )
+            return (
+              <g key={b.id} clipPath="url(#colClip)">
+                <g
+                  style={{
+                    opacity: fillOpacity,
+                    transform: `translateY(${(1 - reveal) * 10}px)`,
+                    transformOrigin: `${COL_X + COL_W / 2}px ${b.bottomY}px`,
+                  }}
+                >
+                  <rect x={COL_X} y={bandTop} width={COL_W} height={bandHeight} fill={`url(#grad-${b.id})`} />
+                  {speckleData[b.index].map((s, si) =>
+                    s.kind === 'rect' ? (
+                      <rect key={si} x={s.x} y={s.y} width={s.w} height={s.h} fill={s.c} opacity={s.op} rx={2} />
+                    ) : (
+                      <circle key={si} cx={s.x} cy={s.y} r={s.w} fill={s.c} opacity={s.op} />
+                    )
+                  )}
+                </g>
+                {isHi && (
+                  <rect
+                    x={COL_X}
+                    y={bandTop}
+                    width={COL_W}
+                    height={bandHeight}
+                    fill={PALETTE.gold}
+                    opacity={0.16 * glowT}
+                    filter="url(#strataGlow)"
+                  />
                 )}
               </g>
-              {isHi && (
-                <rect
-                  x={COL_X}
-                  y={bandTop}
-                  width={COL_W}
-                  height={bandHeight}
-                  fill={PALETTE.gold}
-                  opacity={0.16 * glowT}
-                  filter="url(#strataGlow)"
-                />
-              )}
-            </g>
-          );
-        })}
+            );
+          })}
 
-        {/* Ghost outlines for destroyed-mode removed bands, and dashed
-            excavation rim. */}
-        {mode === 'destroyed' &&
-          bands
-            .filter((b) => removedIds.has(b.id))
-            .map((b) => (
-              <rect
-                key={`ghost-${b.id}`}
-                x={COL_X}
-                y={b.top}
-                width={COL_W}
-                height={b.h}
+          {/* Fine sediment sifting down through the section, continuously */}
+          <g clipPath="url(#colClip)">
+            {sediment.map((p, i) => {
+              const u = (p.phase + progress * p.speed) % 1;
+              const y = COL_TOP + u * COL_H;
+              const op = 0.28 * edgeFadeBump(u);
+              if (op <= 0.01) return null;
+              return <circle key={i} cx={p.x + p.drift * u} cy={y} r={p.r} fill={PALETTE.bone} opacity={op} />;
+            })}
+          </g>
+
+          {/* Ghost outlines for destroyed-mode removed bands, and dashed
+              excavation rim. */}
+          {mode === 'destroyed' &&
+            bands
+              .filter((b) => removedIds.has(b.id))
+              .map((b) => (
+                <rect
+                  key={`ghost-${b.id}`}
+                  x={COL_X}
+                  y={b.topY}
+                  width={COL_W}
+                  height={b.h}
+                  fill="none"
+                  stroke={PALETTE.bone}
+                  strokeOpacity={0.22 * ghostT}
+                  strokeWidth={1.2}
+                  strokeDasharray="7 8"
+                />
+              ))}
+          {mode === 'destroyed' && (
+            <line
+              x1={COL_X - 6}
+              y1={COL_TOP + bands.find((b) => b.id === goutedPartialId)!.h * lerp(1, 0.4, ghostT)}
+              x2={COL_X + COL_W + 6}
+              y2={COL_TOP + bands.find((b) => b.id === goutedPartialId)!.h * lerp(1, 0.4, ghostT)}
+              stroke={PALETTE.ember}
+              strokeOpacity={0.32 * ghostT}
+              strokeWidth={1.5}
+              strokeDasharray="2 5"
+            />
+          )}
+
+          {/* Actively crumbling / falling debris, staggered across most of
+              the shot rather than resolving early. */}
+          {mode === 'destroyed' &&
+            crumbleChunks.map((c, i) => {
+              const age = clamp01((progress - c.startP) / c.fallDur);
+              if (age <= 0) return null;
+              const fall = easeInCubic(age);
+              const y = c.originY + fall * c.fallDist;
+              if (y > COL_BOTTOM + 60) return null;
+              const x = c.originX + c.drift * fall;
+              const opacity = age > 0.7 ? lerp(0.85, 0, (age - 0.7) / 0.3) : 0.85;
+              return (
+                <rect
+                  key={i}
+                  x={x - c.w / 2}
+                  y={y - c.h / 2}
+                  width={c.w}
+                  height={c.h}
+                  fill={c.color}
+                  opacity={opacity}
+                  transform={`rotate(${c.rot * age} ${x} ${y})`}
+                  rx={1.5}
+                />
+              );
+            })}
+
+          {/* Layer boundaries */}
+          {boundaries.map((d, i) => {
+            const reveal = Math.min(revealFor(bands[i].index), revealFor(bands[i + 1].index));
+            return (
+              <path
+                key={i}
+                d={d}
                 fill="none"
                 stroke={PALETTE.bone}
-                strokeOpacity={0.22 * ghostT}
-                strokeWidth={1.2}
-                strokeDasharray="7 8"
+                strokeOpacity={0.14 * reveal}
+                strokeWidth={1}
+              />
+            );
+          })}
+
+          {/* Highlight outline strokes, drawn above boundaries */}
+          {bands
+            .filter((b) => highlightSet.has(b.id))
+            .map((b) => (
+              <rect
+                key={`hi-outline-${b.id}`}
+                x={COL_X + 1}
+                y={b.topY + 1}
+                width={COL_W - 2}
+                height={b.h - 2}
+                fill="none"
+                stroke={PALETTE.goldBright}
+                strokeOpacity={0.7 * glowT}
+                strokeWidth={1.5}
               />
             ))}
-        {mode === 'destroyed' && (
-          <line
-            x1={COL_X - 6}
-            y1={COL_TOP + bands.find((b) => b.id === goutedPartialId)!.h * lerp(1, 0.4, ghostT) + 0}
-            x2={COL_X + COL_W + 6}
-            y2={COL_TOP + bands.find((b) => b.id === goutedPartialId)!.h * lerp(1, 0.4, ghostT) + 0}
-            stroke={PALETTE.ember}
-            strokeOpacity={0.3 * ghostT}
-            strokeWidth={1.5}
-            strokeDasharray="2 5"
-          />
-        )}
 
-        {/* Layer boundaries */}
-        {boundaries.map((d, i) => {
-          const reveal = Math.min(revealFor(bands[i].index), revealFor(bands[i + 1].index));
-          return (
-            <path
-              key={i}
-              d={d}
-              fill="none"
-              stroke={PALETTE.bone}
-              strokeOpacity={0.14 * reveal}
-              strokeWidth={1}
-            />
-          );
-        })}
+          {/* Bedrock fade below the column */}
+          <rect x={0} y={COL_BOTTOM - 60} width={1920} height={160} fill="url(#bedrockFade)" />
 
-        {/* Highlight outline strokes, drawn above boundaries */}
-        {bands
-          .filter((b) => highlightSet.has(b.id))
-          .map((b) => (
-            <rect
-              key={`hi-outline-${b.id}`}
-              x={COL_X + 1}
-              y={b.top + 1}
-              width={COL_W - 2}
-              height={b.h - 2}
-              fill="none"
-              stroke={PALETTE.goldBright}
-              strokeOpacity={0.75 * glowT}
-              strokeWidth={1.5}
-            />
-          ))}
-
-        {/* Bedrock fade below the column */}
-        <rect x={0} y={COL_BOTTOM - 60} width={1920} height={160} fill="url(#bedrockFade)" />
+          {/* Tick lines connecting labels to their band — drawn in, not
+              popped: they grow outward from the column edge. */}
+          {bands.map((b) => {
+            const isHi = highlightSet.has(b.id);
+            const dim = hasHighlight && !isHi;
+            const reveal = revealFor(b.index);
+            const cy = (b.topY + b.bottomY) / 2;
+            const inTitleBand = cy > SAFE_AREA.titleBandTop - 20 && cy < SAFE_AREA.titleBandBottom + 20;
+            const bandFade = inTitleBand ? 0.45 : 1;
+            const drawT = easeOutCubic((reveal - 0.15) / 0.5);
+            const x2 = lerp(COL_X, TICK_X0, clamp01(drawT));
+            return (
+              <line
+                key={`tick-${b.id}`}
+                x1={COL_X}
+                y1={cy}
+                x2={x2}
+                y2={cy}
+                stroke={isHi ? PALETTE.goldBright : PALETTE.ash}
+                strokeOpacity={reveal * bandFade * (dim ? 0.2 : isHi ? 0.85 : 0.4)}
+                strokeWidth={isHi ? 1.4 : 1}
+              />
+            );
+          })}
+        </g>
 
         {/* Contrast relief across the section-title safe band */}
         <rect
@@ -366,13 +495,13 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
         />
       </svg>
 
-      {/* Labels — HTML for crisp Inter type */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+      {/* Labels — HTML for crisp Inter type, sharing the same camera drift */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', transform: sceneTransform, transformOrigin: sceneTransformOrigin }}>
         {bands.map((b) => {
           const isHi = highlightSet.has(b.id);
           const dim = hasHighlight && !isHi;
           const reveal = revealFor(b.index);
-          const cy = (b.top + b.bottom) / 2;
+          const cy = (b.topY + b.bottomY) / 2;
           const inTitleBand = cy > SAFE_AREA.titleBandTop - 20 && cy < SAFE_AREA.titleBandBottom + 20;
           const bandFade = inTitleBand ? 0.45 : 1;
           const baseOpacity = reveal * bandFade * (dim ? 0.28 : isHi ? 1 : 0.62);
@@ -433,29 +562,6 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
             </div>
           );
         })}
-        {/* Tick lines connecting labels to their band */}
-        <svg width={1920} height={1080} viewBox="0 0 1920 1080" style={{ position: 'absolute', inset: 0 }}>
-          {bands.map((b) => {
-            const isHi = highlightSet.has(b.id);
-            const dim = hasHighlight && !isHi;
-            const reveal = revealFor(b.index);
-            const cy = (b.top + b.bottom) / 2;
-            const inTitleBand = cy > SAFE_AREA.titleBandTop - 20 && cy < SAFE_AREA.titleBandBottom + 20;
-            const bandFade = inTitleBand ? 0.45 : 1;
-            return (
-              <line
-                key={`tick-${b.id}`}
-                x1={TICK_X0}
-                y1={cy}
-                x2={COL_X}
-                y2={cy}
-                stroke={isHi ? PALETTE.goldBright : PALETTE.ash}
-                strokeOpacity={reveal * bandFade * (dim ? 0.2 : isHi ? 0.85 : 0.4)}
-                strokeWidth={isHi ? 1.4 : 1}
-              />
-            );
-          })}
-        </svg>
 
         {/* Surface / bedrock orientation labels */}
         <div
@@ -496,7 +602,7 @@ export const StrataColumn: React.FC<SceneProps> = ({ progress, seed, options }) 
             style={{
               position: 'absolute',
               left: COL_X + COL_W + 30,
-              top: bands.find((b) => b.id === 'VIII')!.top + 6,
+              top: bands.find((b) => b.id === 'VIII')!.topY + 6,
               fontFamily: 'Inter, sans-serif',
               fontWeight: 500,
               fontSize: 13,

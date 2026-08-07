@@ -8,10 +8,11 @@ import { SAFE_AREA, PALETTE } from './types';
 /**
  * GreatTrench — Schliemann's Great Trench: a hard vertical gash cut straight
  * down through the mound at Hisarlik, slicing through the strata with
- * almost no record of what was destroyed. A mound cross-section is drawn
- * intact, then a trench opens through its centre over the shot's duration,
- * throwing rubble outward and leaving severed layer edges exposed on both
- * cut walls. Irreversible, not chaotic — the ruin stays legible.
+ * almost no record of what was destroyed. This is the most kinetic of the
+ * three scenes: the cut visibly drives downward through the mound across
+ * the whole shot, spoil tumbles and dust plumes rise as it passes each
+ * layer, and the severed layer edges shear into view on both cut walls the
+ * instant the blade of the cut reaches them.
  */
 
 function mulberry32(seed: number) {
@@ -30,6 +31,10 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
 const easeInCubic = (t: number) => Math.pow(clamp01(t), 3);
 const easeOutQuad = (t: number) => 1 - (1 - clamp01(t)) * (1 - clamp01(t));
+const easeInOutCubic = (t: number) => {
+  const x = clamp01(t);
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+};
 
 // Mound geometry (composition px, 1920x1080).
 const BASE_Y = 924;
@@ -39,10 +44,14 @@ const BASE_R = 1730;
 const TOP_L = 560;
 const TOP_R = 1360;
 const CX = (TOP_L + TOP_R) / 2; // trench centre x
+const CUT_START_Y = TOP_Y - 14;
+const CUT_END_Y = BASE_Y + 90;
 
 const TRENCH_MAX_W = 168;
-const TRENCH_OPEN_START = 0.1;
-const TRENCH_OPEN_END = 0.58;
+// The cut's leading edge advances continuously across most of the shot —
+// this is the scene's primary, whole-duration motion.
+const CUT_DEPTH_START = 0.05;
+const CUT_DEPTH_END = 0.92;
 
 type StratumDef = { top: number; bottom: number; colorTop: string; colorBottom: string; texture: 'earth' | 'stone' | 'ash' };
 
@@ -67,6 +76,19 @@ function widthAt(y: number) {
   return lerp(halfBase, halfTop, t);
 }
 
+// The cut's leading-edge depth as a function of progress — used both for
+// rendering the current cut and for scheduling events (dust, boundary
+// shears) that reference "when did the blade reach this y".
+function depthTAt(p: number) {
+  return clamp01((p - CUT_DEPTH_START) / (CUT_DEPTH_END - CUT_DEPTH_START));
+}
+function cutDepthYAt(p: number) {
+  return lerp(CUT_START_Y, CUT_END_Y, easeInOutCubic(depthTAt(p)));
+}
+function trenchWidthAt(p: number) {
+  return TRENCH_MAX_W * easeOutCubic(clamp01(p / 0.45));
+}
+
 type GreatTrenchOptions = {
   caption?: boolean;
 };
@@ -89,6 +111,15 @@ export const GreatTrench: React.FC<SceneProps> = ({ progress, seed, options }) =
   }, []);
 
   const boundaryYs = useMemo(() => bands.slice(1).map((b) => b.top), [bands]);
+  // The progress value at which the advancing cut reaches each boundary.
+  const boundaryProgress = useMemo(
+    () =>
+      boundaryYs.map((y) => {
+        const dT = clamp01((y - CUT_START_Y) / (CUT_END_Y - CUT_START_Y));
+        return CUT_DEPTH_START + dT * (CUT_DEPTH_END - CUT_DEPTH_START);
+      }),
+    [boundaryYs]
+  );
 
   // Mound sides drawn as gently organic (not perfectly straight) via a
   // handful of seeded control points.
@@ -124,34 +155,82 @@ export const GreatTrench: React.FC<SceneProps> = ({ progress, seed, options }) =
     });
   }, [bands, seedInt]);
 
-  // --- Trench opening ---------------------------------------------------
-  const openT = easeOutCubic((progress - TRENCH_OPEN_START) / (TRENCH_OPEN_END - TRENCH_OPEN_START));
-  const trenchW = TRENCH_MAX_W * openT;
+  // --- Trench opening (continuous through most of the shot) -----------
+  const depthT = depthTAt(progress);
+  const cutDepthY = cutDepthYAt(progress);
+  const trenchW = trenchWidthAt(progress);
   const trenchL = CX - trenchW / 2;
   const trenchR = CX + trenchW / 2;
 
   // Guide line before the cut begins.
-  const guideOpacity = 0.5 * (1 - easeOutCubic(progress / TRENCH_OPEN_START));
+  const guideOpacity = 0.5 * (1 - easeOutCubic(progress / CUT_DEPTH_START));
 
-  // --- Falling rubble ------------------------------------------------
+  // Boundary "shear" pulses — a brief flash + jolt exactly as the advancing
+  // blade reaches each layer boundary. Cheap: a handful of gaussian bumps
+  // evaluated per frame.
+  const shears = useMemo(
+    () =>
+      boundaryProgress.map((bp, i) => {
+        const rand = mulberry32(seedInt + 40000 + i * 17);
+        return { bp, jx: (rand() - 0.5) * 5, jy: (rand() - 0.5) * 3 };
+      }),
+    [boundaryProgress, seedInt]
+  );
+  const shearIntensities = shears.map((s) => {
+    const d = (progress - s.bp) / 0.03;
+    return Math.exp(-(d * d));
+  });
+  const totalShake = shears.reduce(
+    (acc, s, i) => {
+      const inten = shearIntensities[i];
+      return { x: acc.x + s.jx * inten, y: acc.y + s.jy * inten };
+    },
+    { x: 0, y: 0 }
+  );
+
+  // Subtle continuous camera creep, alive for the whole shot, plus the
+  // boundary-shear shake layered on top.
+  const camScale = 1 + 0.022 * progress;
+  const camY = -10 * progress + totalShake.y;
+  const camX = totalShake.x;
+  const sceneTransform = `translate(${camX}px, ${camY}px) scale(${camScale})`;
+  const sceneTransformOrigin = `${CX}px ${(TOP_Y + BASE_Y) / 2}px`;
+
+  // --- Falling rubble, spread across the whole cutting window ----------
   const chunks = useMemo(() => {
     const rand = mulberry32(seedInt + 7000);
-    const n = 16;
+    const n = 26;
     return Array.from({ length: n }).map(() => {
-      const startP = TRENCH_OPEN_START + rand() * 0.42;
-      const bandIdx = Math.floor(rand() * bands.length);
-      const band = bands[bandIdx];
-      const originY = clamp01(rand()) * (band.h) + band.top;
+      const startP = CUT_DEPTH_START + rand() * (CUT_DEPTH_END - CUT_DEPTH_START - 0.1);
+      const originY = cutDepthYAt(startP) - rand() * 30;
       const side = rand() > 0.5 ? 1 : -1;
       const w = 10 + rand() * 22;
       const h = 8 + rand() * 16;
       const spread = 40 + rand() * 260;
       const fallDist = 380 + rand() * 420;
       const rot = (rand() - 0.5) * 90;
-      const fallDur = 0.22 + rand() * 0.2;
-      return { startP, originY, side, w, h, spread, fallDist, rot, fallDur, color: band.colorTop };
+      const fallDur = 0.16 + rand() * 0.16;
+      const bandIdx = Math.floor(rand() * bands.length);
+      return { startP, originY, side, w, h, spread, fallDist, rot, fallDur, color: bands[bandIdx].colorTop };
     });
   }, [bands, seedInt]);
+
+  // --- Dust plumes rising from the advancing cut ------------------------
+  const plumes = useMemo(() => {
+    const rand = mulberry32(seedInt + 8500);
+    const n = 20;
+    return Array.from({ length: n }).map(() => {
+      const spawnP = CUT_DEPTH_START + rand() * (CUT_DEPTH_END - CUT_DEPTH_START);
+      const originY = cutDepthYAt(spawnP);
+      const wAtSpawn = trenchWidthAt(spawnP);
+      const originX = CX + (rand() - 0.5) * wAtSpawn * 0.7;
+      const life = 0.1 + rand() * 0.09;
+      const rise = 70 + rand() * 90;
+      const drift = (rand() - 0.5) * 50;
+      const maxR = 26 + rand() * 30;
+      return { spawnP, originX, originY, life, rise, drift, maxR };
+    });
+  }, [seedInt]);
 
   // --- Spoil heaps (accumulated rubble at the base, either side) -----
   const spoilChunks = useMemo(() => {
@@ -169,20 +248,19 @@ export const GreatTrench: React.FC<SceneProps> = ({ progress, seed, options }) =
       });
     return [...makeHeap(BASE_L - 30, -1), ...makeHeap(BASE_R + 30, 1)];
   }, [seedInt]);
-  const spoilT = easeOutCubic((progress - 0.2) / 0.55);
+  const spoilT = easeOutCubic(depthT);
 
-  // --- Small figures for scale, standing at the trench floor ---------
+  // --- Small figures for scale, standing at the trench floor, with a
+  // faint idle bob once the cut has reached the base. -------------------
   const figures = useMemo(() => {
     const rand = mulberry32(seedInt + 12000);
     return Array.from({ length: 2 }).map(() => ({
-      x: CX + (rand() - 0.5) * (trenchWFinal() - 40),
+      x: CX + (rand() - 0.5) * (TRENCH_MAX_W - 40),
       lean: (rand() - 0.5) * 6,
+      bobPhase: rand(),
     }));
-    function trenchWFinal() {
-      return TRENCH_MAX_W;
-    }
   }, [seedInt]);
-  const figuresOpacity = easeOutCubic((progress - 0.62) / 0.3) * 0.55;
+  const figuresOpacity = easeOutCubic((depthT - 0.78) / 0.18) * 0.55;
 
   return (
     <AbsoluteFill style={{ backgroundColor: PALETTE.ink, overflow: 'hidden' }}>
@@ -214,104 +292,132 @@ export const GreatTrench: React.FC<SceneProps> = ({ progress, seed, options }) =
             <stop offset="0%" stopColor={PALETTE.ink} stopOpacity={0} />
             <stop offset="100%" stopColor={PALETTE.ink} stopOpacity={1} />
           </linearGradient>
+          <radialGradient id="puffGrad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor={PALETTE.bone} stopOpacity={0.55} />
+            <stop offset="60%" stopColor={PALETTE.bone} stopOpacity={0.18} />
+            <stop offset="100%" stopColor={PALETTE.bone} stopOpacity={0} />
+          </radialGradient>
         </defs>
 
-        {/* Mound body */}
-        <g clipPath="url(#moundClip)">
-          {bands.map((b, i) => (
-            <rect key={i} x={0} y={b.top} width={1920} height={b.h + 1} fill={b.colorTop} />
-          ))}
-          {bands.map((b, i) => (
-            <rect
-              key={`shade-${i}`}
-              x={0}
-              y={b.top}
-              width={1920}
-              height={b.h + 1}
-              fill={b.colorBottom}
-              opacity={0.35}
-            />
-          ))}
-          {speckles.map((arr, i) =>
-            arr.map((s, si) => <circle key={`${i}-${si}`} cx={s.x} cy={s.y} r={s.r} fill={s.c} opacity={s.op} />)
-          )}
-          {boundaryYs.map((y, i) => (
-            <line key={i} x1={CX - widthAt(y)} y1={y} x2={CX + widthAt(y)} y2={y} stroke={PALETTE.bone} strokeOpacity={0.12} strokeWidth={1} />
-          ))}
+        <g style={{ transform: sceneTransform, transformOrigin: sceneTransformOrigin }}>
+          {/* Mound body */}
+          <g clipPath="url(#moundClip)">
+            {bands.map((b, i) => (
+              <rect key={i} x={0} y={b.top} width={1920} height={b.h + 1} fill={b.colorTop} />
+            ))}
+            {bands.map((b, i) => (
+              <rect
+                key={`shade-${i}`}
+                x={0}
+                y={b.top}
+                width={1920}
+                height={b.h + 1}
+                fill={b.colorBottom}
+                opacity={0.35}
+              />
+            ))}
+            {speckles.map((arr, i) =>
+              arr.map((s, si) => <circle key={`${i}-${si}`} cx={s.x} cy={s.y} r={s.r} fill={s.c} opacity={s.op} />)
+            )}
+            {boundaryYs.map((y, i) => (
+              <line key={i} x1={CX - widthAt(y)} y1={y} x2={CX + widthAt(y)} y2={y} stroke={PALETTE.bone} strokeOpacity={0.12} strokeWidth={1} />
+            ))}
 
-          {/* The cut itself, clipped to the mound silhouette */}
-          {trenchW > 0.5 && (
-            <>
-              <rect x={trenchL} y={TOP_Y - 20} width={trenchW} height={BASE_Y - TOP_Y + 260} fill="url(#trenchShadow)" />
-              <rect x={trenchL} y={TOP_Y - 20} width={Math.min(24, trenchW / 2)} height={BASE_Y - TOP_Y + 260} fill="url(#trenchWallL)" />
-              <rect x={trenchR - Math.min(24, trenchW / 2)} y={TOP_Y - 20} width={Math.min(24, trenchW / 2)} height={BASE_Y - TOP_Y + 260} fill="url(#trenchWallR)" />
-            </>
-          )}
-        </g>
+            {/* The cut itself — its depth advances continuously with
+                progress, clipped to the mound silhouette. */}
+            {trenchW > 0.5 && cutDepthY > CUT_START_Y && (
+              <>
+                <rect x={trenchL} y={CUT_START_Y} width={trenchW} height={Math.min(cutDepthY, BASE_Y + 260) - CUT_START_Y} fill="url(#trenchShadow)" />
+                <rect x={trenchL} y={CUT_START_Y} width={Math.min(24, trenchW / 2)} height={cutDepthY - CUT_START_Y} fill="url(#trenchWallL)" />
+                <rect x={trenchR - Math.min(24, trenchW / 2)} y={CUT_START_Y} width={Math.min(24, trenchW / 2)} height={cutDepthY - CUT_START_Y} fill="url(#trenchWallR)" />
+              </>
+            )}
+          </g>
 
-        {/* Mound outline */}
-        <path d={moundPath} fill="none" stroke={PALETTE.ash} strokeOpacity={0.3} strokeWidth={1.2} />
+          {/* Mound outline */}
+          <path d={moundPath} fill="none" stroke={PALETTE.ash} strokeOpacity={0.3} strokeWidth={1.2} />
 
-        {/* Severed layer edges on both trench walls */}
-        {trenchW > 4 &&
-          boundaryYs.map((y, i) => {
-            if (y < TOP_Y || y > BASE_Y) return null;
+          {/* Severed layer edges — shear into view exactly as the blade
+              passes, then remain as the visible scar. */}
+          {boundaryYs.map((y, i) => {
+            if (y < CUT_START_Y || y > BASE_Y) return null;
+            const revealAmt = clamp01((progress - boundaryProgress[i]) / 0.015 + 0.5);
+            const flash = shearIntensities[i];
+            if (revealAmt <= 0.02 && flash <= 0.02) return null;
             return (
               <g key={`sever-${i}`}>
-                <line x1={trenchL - 12} y1={y} x2={trenchL} y2={y} stroke={PALETTE.goldBright} strokeOpacity={0.4} strokeWidth={1.5} />
-                <line x1={trenchR} y1={y} x2={trenchR + 12} y2={y} stroke={PALETTE.goldBright} strokeOpacity={0.4} strokeWidth={1.5} />
+                <line x1={trenchL - 12 - flash * 6} y1={y} x2={trenchL} y2={y} stroke={PALETTE.goldBright} strokeOpacity={0.4 * revealAmt + flash * 0.5} strokeWidth={1.5 + flash * 1.5} />
+                <line x1={trenchR} y1={y} x2={trenchR + 12 + flash * 6} y2={y} stroke={PALETTE.goldBright} strokeOpacity={0.4 * revealAmt + flash * 0.5} strokeWidth={1.5 + flash * 1.5} />
+                {flash > 0.05 && (
+                  <rect x={trenchL} y={y - 3} width={trenchW} height={6} fill={PALETTE.goldBright} opacity={flash * 0.35} />
+                )}
               </g>
             );
           })}
 
-        {/* Guide line before the cut opens */}
-        {guideOpacity > 0.01 && (
-          <line x1={CX} y1={TOP_Y - 10} x2={CX} y2={BASE_Y + 10} stroke={PALETTE.gold} strokeOpacity={guideOpacity} strokeWidth={1.5} strokeDasharray="4 8" />
-        )}
+          {/* Guide line before the cut opens */}
+          {guideOpacity > 0.01 && (
+            <line x1={CX} y1={TOP_Y - 10} x2={CX} y2={BASE_Y + 10} stroke={PALETTE.gold} strokeOpacity={guideOpacity} strokeWidth={1.5} strokeDasharray="4 8" />
+          )}
 
-        {/* Falling rubble */}
-        {chunks.map((c, i) => {
-          const age = clamp01((progress - c.startP) / c.fallDur);
-          if (age <= 0) return null;
-          const fall = easeInCubic(age);
-          const y = c.originY + fall * c.fallDist;
-          const x = CX + c.side * c.spread * easeOutQuad(age) * 0.6 + c.side * 20;
-          if (y > BASE_Y + 40) return null;
-          const opacity = age > 0.72 ? lerp(0.8, 0, (age - 0.72) / 0.28) : 0.8;
-          return (
-            <rect
-              key={i}
-              x={x - c.w / 2}
-              y={y - c.h / 2}
-              width={c.w}
-              height={c.h}
-              fill={c.color}
-              opacity={opacity}
-              transform={`rotate(${c.rot * age} ${x} ${y})`}
-              rx={1.5}
-            />
-          );
-        })}
+          {/* Falling rubble */}
+          {chunks.map((c, i) => {
+            const age = clamp01((progress - c.startP) / c.fallDur);
+            if (age <= 0) return null;
+            const fall = easeInCubic(age);
+            const y = c.originY + fall * c.fallDist;
+            const x = CX + c.side * c.spread * easeOutQuad(age) * 0.6 + c.side * 20;
+            if (y > BASE_Y + 40) return null;
+            const opacity = age > 0.72 ? lerp(0.8, 0, (age - 0.72) / 0.28) : 0.8;
+            return (
+              <rect
+                key={i}
+                x={x - c.w / 2}
+                y={y - c.h / 2}
+                width={c.w}
+                height={c.h}
+                fill={c.color}
+                opacity={opacity}
+                transform={`rotate(${c.rot * age} ${x} ${y})`}
+                rx={1.5}
+              />
+            );
+          })}
 
-        {/* Spoil heaps settling at the base */}
-        <g opacity={spoilT}>
-          {spoilChunks.map((s, i) => (
-            <rect key={i} x={s.x - s.w / 2} y={s.y - s.h / 2} width={s.w} height={s.h} fill={s.shade} opacity={0.75} rx={2} />
-          ))}
+          {/* Dust plumes rising from the advancing cut */}
+          {plumes.map((p, i) => {
+            const age = clamp01((progress - p.spawnP) / p.life);
+            if (progress < p.spawnP || age > 1) return null;
+            const bump = Math.sin(Math.PI * age);
+            const y = p.originY - age * p.rise;
+            const x = p.originX + p.drift * age;
+            const r = lerp(8, p.maxR, age);
+            return <circle key={i} cx={x} cy={y} r={r} fill="url(#puffGrad)" opacity={bump * 0.6} />;
+          })}
+
+          {/* Spoil heaps settling at the base */}
+          <g opacity={spoilT}>
+            {spoilChunks.map((s, i) => (
+              <rect key={i} x={s.x - s.w / 2} y={s.y - s.h / 2} width={s.w} height={s.h} fill={s.shade} opacity={0.75} rx={2} />
+            ))}
+          </g>
+
+          {/* Tiny figures at the trench floor, for scale, with a faint idle bob */}
+          <g opacity={figuresOpacity}>
+            {figures.map((f, i) => {
+              const bob = Math.sin((progress * 2.2 + f.bobPhase) * Math.PI * 2) * 1.4;
+              return (
+                <g key={i} transform={`translate(${f.x} ${BASE_Y - 4 + bob}) rotate(${f.lean})`}>
+                  <rect x={-2.5} y={-22} width={5} height={18} fill={PALETTE.ink} stroke={PALETTE.ash} strokeOpacity={0.7} strokeWidth={0.8} rx={2} />
+                  <circle cx={0} cy={-26} r={4} fill={PALETTE.ink} stroke={PALETTE.ash} strokeOpacity={0.7} strokeWidth={0.8} />
+                </g>
+              );
+            })}
+          </g>
+
+          {/* Ground fade beneath the mound base */}
+          <rect x={0} y={BASE_Y - 40} width={1920} height={200} fill="url(#groundFadeTrench)" />
         </g>
-
-        {/* Tiny figures at the trench floor, for scale */}
-        <g opacity={figuresOpacity}>
-          {figures.map((f, i) => (
-            <g key={i} transform={`translate(${f.x} ${BASE_Y - 4}) rotate(${f.lean})`}>
-              <rect x={-2.5} y={-22} width={5} height={18} fill={PALETTE.ink} stroke={PALETTE.ash} strokeOpacity={0.7} strokeWidth={0.8} rx={2} />
-              <circle cx={0} cy={-26} r={4} fill={PALETTE.ink} stroke={PALETTE.ash} strokeOpacity={0.7} strokeWidth={0.8} />
-            </g>
-          ))}
-        </g>
-
-        {/* Ground fade beneath the mound base */}
-        <rect x={0} y={BASE_Y - 40} width={1920} height={200} fill="url(#groundFadeTrench)" />
 
         {/* Contrast relief across the section-title safe band */}
         <rect x={0} y={SAFE_AREA.titleBandTop} width={1920} height={SAFE_AREA.titleBandBottom - SAFE_AREA.titleBandTop} fill={PALETTE.ink} opacity={0.28} />
