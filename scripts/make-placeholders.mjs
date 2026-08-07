@@ -166,12 +166,13 @@ function buildComposition(id) {
   // A repeating-conic-gradient spoke pattern centered on the primary glow,
   // blended with 'screen' so it only ever brightens — a soft suggestion of
   // light breaking through dust/haze, used on most (not all) compositions.
-  const hasRays = rng() < 0.7;
+  const hasRays = rng() < 0.55;
   const rayCount = 8 + Math.floor(rng() * 6);
   const raySpread = 360 / rayCount;
   const rayWidth = raySpread * between(rng, 0.18, 0.35);
   const rayRotation = Math.floor(between(rng, 0, 360));
-  const rayAlpha = between(rng, 0.05, 0.11);
+  const rayAlpha = between(rng, 0.045, 0.09);
+  const rayReach = between(rng, 32, 55); // % radius before rays fade to nothing
   const rays = hasRays
     ? {
         cx: primaryGx,
@@ -181,6 +182,9 @@ function buildComposition(id) {
         )}% ${primaryGy.toFixed(1)}%, ${hsla(hue + 8, 60, 75, rayAlpha)} 0deg ${rayWidth.toFixed(
           1
         )}deg, transparent ${rayWidth.toFixed(1)}deg ${raySpread.toFixed(1)}deg)`,
+        maskCss: `radial-gradient(circle at ${primaryGx.toFixed(1)}% ${primaryGy.toFixed(
+          1
+        )}%, black 0%, black ${(rayReach * 0.4).toFixed(1)}%, transparent ${rayReach.toFixed(1)}%)`,
       }
     : null;
 
@@ -324,7 +328,7 @@ function buildHtml(img) {
     : '';
 
   const raysDiv = comp.rays
-    ? `<div class="rays" style="background-image: ${comp.rays.css};"></div>`
+    ? `<div class="rays" style="background-image: ${comp.rays.css}; mask-image: ${comp.rays.maskCss}; -webkit-mask-image: ${comp.rays.maskCss};"></div>`
     : '';
 
   return `<!doctype html>

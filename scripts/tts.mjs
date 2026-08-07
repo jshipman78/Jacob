@@ -393,6 +393,13 @@ async function main() {
   }
   shots[shots.length - 1].end = durationSec; // last shot reaches true end
 
+  // The leading silence and the trailing silence sit outside the first and last
+  // spoken sentences, so absorb them into the adjacent shot and section rather
+  // than leaving the timeline uncovered at either end — the composition tiles
+  // shots directly and would otherwise show black under the opening fade.
+  shots[0].start = 0;
+  sections[0].start = 0;
+
   // --- sentences[] (public schema — caption text, never spokenText) -------
   const sentencesOut = sentences.map((s) => ({
     index: s.index,

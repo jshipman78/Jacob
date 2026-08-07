@@ -5,3 +5,4 @@ public/audio/
 
 .env
 .env.local
+out/check/
