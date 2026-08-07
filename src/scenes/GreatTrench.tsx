@@ -5,7 +5,7 @@ import {
   Plate, PLATE, HatchField, StippleField, InkPath, PlateCaption,
   hatch, hatchContours, stipple, flicks, contour, segment, wobblyRect,
   rngFor, makeFbm1D, lerp, clamp01, clamp,
-  onNs, rakingLight, ramp, stagger, pulse, anticipate,
+  cycle, onNs, rakingLight, ramp, stagger, pulse, anticipate,
   easeOutCubic, easeInOutCubic, easeOutQuint,
 } from './engraving';
 
@@ -339,7 +339,7 @@ export const GreatTrench: React.FC<SceneProps> = ({ progress, frame, fps, seed }
             >
               <path
                 d={
-                  (Math.floor(onNs(frame, 9) / 9) % 2 === 0
+                  (cycle(frame, 9, 2) === 0
                     ? 'M0.5,0.0 L0.5,0.42 M0.5,0.42 L0.42,0.72 M0.5,0.42 L0.58,0.72 M0.5,0.10 L0.70,0.24'
                     : 'M0.5,0.0 L0.5,0.42 M0.5,0.42 L0.40,0.72 M0.5,0.42 L0.60,0.72 M0.5,0.10 L0.68,0.18')
                 }

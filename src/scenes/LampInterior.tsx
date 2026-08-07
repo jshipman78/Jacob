@@ -5,7 +5,7 @@ import {
   Plate, PLATE, HatchField, StippleField, InkPath, PlateCaption,
   hatch, crossHatch, hatchContours, stipple, flicks, contour, segment, wobblyEllipse,
   rngFor, makeFbm1D, lerp, clamp01,
-  onNs, rakingLight, ramp, stagger, settle, pulse,
+  cycle, onNs, rakingLight, ramp, stagger, settle, pulse,
   easeOutCubic, easeInOutCubic, easeOutQuint,
 } from './engraving';
 
@@ -207,8 +207,8 @@ export const LampInterior: React.FC<SceneProps> = ({
     for (let i = 0; i < 600; i++) arr[i] = rand();
     return arr;
   }, [seed]);
-  const fi = Math.floor(onNs(frame, 3) / 3);
-  const f0 = flick[fi % 600];
+  const fi = cycle(frame, 3, 600);
+  const f0 = flick[fi];
   const f1 = flick[(fi + 1) % 600];
   // Occasional gutter — the flame drops hard, roughly once every few seconds.
   const gutter = f0 > 0.94 ? 0.45 : 1;

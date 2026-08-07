@@ -5,7 +5,7 @@ import {
   Plate, PLATE, HatchField, StippleField, InkPath, PlateCaption,
   hatch, crossHatch, hatchContours, stipple, flicks, contour, wobble, segment, swelled, burinProfile,
   rngFor, makeFbm1D, lerp, clamp01, clamp,
-  onNs, rakingLight, ramp, easeOutCubic, easeInOutCubic, stagger,
+  cycle, onNs, rakingLight, ramp, easeOutCubic, easeInOutCubic, stagger,
 } from './engraving';
 
 /**
@@ -539,11 +539,10 @@ export const ExcavationField: React.FC<SceneProps> = ({
           {geo.figures.map((f, i) => {
             const appear = stagger(tCrew, i, geo.figures.length, 0.014, 0.16);
             if (appear <= 0.02) return null;
-            const held = Math.floor(onNs(frame + i * 5, f.hold) / f.hold);
             const poseIdx =
               f.kind === 'dig'
-                ? (held + f.phase) % 4
-                : 4 + ((held + f.phase) % 2);
+                ? (cycle(frame + i * 5, f.hold, 4) + f.phase) % 4
+                : 4 + ((cycle(frame + i * 5, f.hold, 2) + f.phase) % 2);
             // Carriers shuttle back and forth along a short run, and they
             // pause at each end — a triangle wave with flats.
             const shuttle =

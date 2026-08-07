@@ -1,8 +1,35 @@
 # Scene-layer contract
 
 **Audience:** whoever owns `src/scenes/`.
-**Status:** proposed by the pipeline side; not yet implemented. The pipeline
-works today without it, in the degraded mode described at the bottom.
+**Status:** partially met. The scene layer has since shipped a style system of
+its own (`src/scenes/styles/registry.ts`) with four styles and
+`sceneForShotInStyle(imageId, style)`. The pipeline detects it, accepts both
+vocabularies, and degrades explicitly — see [Where the two sides
+differ](#where-the-two-sides-differ) and [Degraded mode](#degraded-mode-what-happens-today).
+
+## Where the two sides differ
+
+Two gaps, one cosmetic and one load-bearing.
+
+**Style ids (cosmetic — already handled).** The scene layer uses `handdrawn`
+and `graphic`; this pipeline uses `hand-drawn` and `motion-graphics`. Every
+style in `pipeline/core/styles.mjs` carries a `sceneLayerId` and `aliases`, so
+`--style=handdrawn` and `--style=hand-drawn` both work and `probeSceneLayer()`
+translates the scene layer's union type into canonical ids. Nothing needs to
+change on either side; worth converging eventually, purely for readability.
+
+**Scene keying (load-bearing — not yet handled).** `sceneForShotInStyle` is
+keyed by *shot id*, and its style variants are keyed to the hand-authored Troy
+shot ids (`dig-crews`, `dig-trench`, `dig-layers`). A generated topic has its
+own shot ids — `fall-of-carthage-harbour`, not `dig-trench` — so **every shot
+falls through to the default scene and `--style` has no visible effect on a
+generated film.** The pipeline reports this at the top of every run rather than
+producing four identical clips and calling them a comparison.
+
+The fix is the `resolveScene(request, style)` interface below. The pipeline
+already writes `scene: { kind, options }` onto every shot in `timing.json`, so
+nothing upstream has to change or re-run — the moment `ShotScenes` prefers
+`shot.scene`, style starts reaching generated topics.
 
 The pipeline (`pipeline/`) and the scene layer (`src/scenes/`) are owned by
 different workstreams, so this file is the whole of the agreement between them.
@@ -75,12 +102,24 @@ export function sceneForShot(shotId: string, style?: StyleId): SceneAssignment;
 this style, falls back to the style's atmosphere scene. A missing picture is a
 worse failure at frame 4,000 than at frame 0.
 
+This can wrap what already exists rather than replacing it — `resolveScene` maps
+a scene kind to whichever component that style uses for it, and
+`sceneForShotInStyle` stays exactly as it is for the Troy shots:
+
+```ts
+export function resolveScene(request, style) {
+  const table = SCENE_BY_KIND[style] ?? SCENE_BY_KIND.handdrawn;
+  const Component = table[request.kind] ?? table.atmosphere;
+  return { Component, options: request.options };
+}
+```
+
 And one change in `src/components/ShotScenes.tsx`:
 
 ```ts
 const assignment = shot.scene
-  ? resolveScene(shot.scene, timing.style ?? 'archival')
-  : sceneForShot(shot.imageId, timing.style ?? 'archival');   // Troy path, unchanged
+  ? resolveScene(shot.scene, timing.style)                    // generated topics
+  : sceneForShotInStyle(shot.imageId, timing.style);          // Troy path, unchanged
 ```
 
 `ShotScenes` currently receives `shots` and `fps` but not `style`; it needs

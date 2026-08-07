@@ -170,10 +170,16 @@ function printStyles() {
         `  ${' '.repeat(17)}${dim(s.summary)}\n\n`
     );
   }
+  const keying = {
+    'scene-kind': 'resolves scenes by scene kind — style reaches any topic',
+    'shot-id': 'resolves scenes by shot id, keyed to the Troy shots — style does NOT reach a generated topic',
+    none: 'exposes no style-aware resolver yet',
+  }[layer.keying];
   process.stdout.write(
     dim(
-      `  Scene layer: src/scenes/registry.ts — mode "${layer.mode}", exposes [${layer.styles.join(', ')}]` +
-        `${layer.hasResolveScene ? ', style-aware resolveScene() present' : ', no style-aware resolveScene() yet'}.\n` +
+      `  Scene layer: src/scenes/ — ${keying}.\n` +
+        `  Its own style ids: [${(layer.sceneLayerStyles ?? layer.styles).join(', ')}]` +
+        ' (both spellings are accepted on --style).\n' +
         '  See docs/scene-layer-contract.md for the interface this pipeline expects.\n\n'
     )
   );

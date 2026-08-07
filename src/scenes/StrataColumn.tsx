@@ -179,13 +179,34 @@ export const StrataColumn: React.FC<SceneProps> = ({
       return { def, topY, bottomY, h, interfaceLine, marks, dots, courses, index: i };
     });
 
+    // Label positions.
+    //
+    // Several bands are only 25-40px tall (VIIa, the destruction layer, is the
+    // thinnest and the most important), so a label parked at the band's own
+    // centre collides with its neighbours. Walk the stack from the bottom up
+    // and push each label down to keep a minimum gap, then draw the tick as a
+    // dog-leg from the band to wherever the label ended up.
+    const LABEL_GAP = 64;
+    let lastLabelY = Infinity;
+    const labelY: number[] = new Array(bands.length);
+    for (let i = 0; i < bands.length; i++) {
+      const natural = bands[i].topY + Math.min(30, bands[i].h * 0.62);
+      const y = Math.min(natural, lastLabelY - LABEL_GAP);
+      labelY[i] = y;
+      lastLabelY = y;
+    }
+
     // The plate frame: the ruled box the section is drawn inside.
     const frameRect = wobblyRect(seed, 'frame', COL_X - 8, COL_TOP - 8, COL_W + 16, COL_H + 16, 1.3);
 
     // The scale bar running down the left of the section.
-    const scaleTicks = bands.map((b) =>
-      contour(seed, `tick${b.index}`,
-        segment({ x: COL_X - 8, y: b.topY }, { x: COL_X - 62, y: b.topY - 2 }, 5), 0.9, 60)
+    const scaleTicks = bands.map((b, i) =>
+      contour(seed, `tick${b.index}`, [
+        { x: COL_X - 8, y: b.topY },
+        { x: COL_X - 34, y: b.topY },
+        { x: COL_X - 48, y: labelY[i] - 10 },
+        { x: COL_X - 76, y: labelY[i] - 10 },
+      ], 0.9, 60)
     );
 
     // For 'destroyed' mode: the profile of Schliemann's cut, gouged down
@@ -199,7 +220,7 @@ export const StrataColumn: React.FC<SceneProps> = ({
       });
     }
 
-    return { bands, frameRect, scaleTicks, gougePts };
+    return { bands, frameRect, scaleTicks, gougePts, labelY };
   }, [seed]);
 
   const p = clamp01(progress);
@@ -370,14 +391,14 @@ export const StrataColumn: React.FC<SceneProps> = ({
                 />
                 <g opacity={lt} transform={`translate(${((1 - lt) * -10).toFixed(2)}, 0)`}>
                   <text
-                    x={LABEL_RIGHT} y={b.topY + Math.min(30, b.h * 0.62)}
+                    x={LABEL_RIGHT} y={geo.labelY[b.index]}
                     textAnchor="end" fill={col}
                     style={{ fontFamily: "'Cinzel', serif", fontWeight: 600, fontSize: isHot ? 38 : 31, letterSpacing: 2 }}
                   >
                     {b.def.roman}
                   </text>
                   <text
-                    x={LABEL_RIGHT} y={b.topY + Math.min(30, b.h * 0.62) + 22}
+                    x={LABEL_RIGHT} y={geo.labelY[b.index] + 22}
                     textAnchor="end" fill={PLATE.cutDim}
                     style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: 16, letterSpacing: 1.1 }}
                   >
@@ -385,7 +406,7 @@ export const StrataColumn: React.FC<SceneProps> = ({
                   </text>
                   {b.def.note && isHot ? (
                     <text
-                      x={LABEL_RIGHT} y={b.topY + Math.min(30, b.h * 0.62) + 44}
+                      x={LABEL_RIGHT} y={geo.labelY[b.index] + 44}
                       textAnchor="end" fill={PLATE.gold}
                       style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 16, letterSpacing: 1.4 }}
                     >

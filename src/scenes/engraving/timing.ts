@@ -69,6 +69,23 @@ export function stepped(
 export const onNs = (frame: number, n: number) => Math.floor(frame / n) * n;
 
 /**
+ * Step index for an animation held on `hold` frames, cycling through `mod`
+ * states — ALWAYS non-negative.
+ *
+ * This exists because of a real bug rather than for tidiness. Every scene's
+ * `frame` prop goes negative during its crossfade lead-in (the shot layer is
+ * mounted `crossfadeFrames` early so it can fade itself in), and JavaScript's
+ * `%` keeps the sign of its left operand. A raw `Math.floor(frame / 7) % 420`
+ * therefore returns a negative index at every single shot transition, which
+ * indexes an array as `undefined` and throws. Stills sampled mid-shot never
+ * hit it; the full render would have hit it thirty times.
+ */
+export const cycle = (frame: number, hold: number, mod: number): number => {
+  const i = Math.floor(onNs(frame, hold) / hold);
+  return ((i % mod) + mod) % mod;
+};
+
+/**
  * Move from 0 to 1 across [start, start+move], then hold dead still until
  * `nextStart`, where the caller picks the move up again. Returns 0..1 for
  * one beat of a hold-move-hold rhythm.

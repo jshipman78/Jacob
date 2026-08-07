@@ -58,6 +58,23 @@ export const ArtifactPlate: React.FC<SceneProps> = ({
     const bandT = contour(seed, 'bandT', bandTop, 1.2, 160);
     const bandB = contour(seed, 'bandB', bandBot, 1.2, 160);
 
+    // The band has to read as a solid strip of beaten gold, not as two rules.
+    // Filled with tight hatching running along its length, with the highlight
+    // left uncut — the engraved convention for metal.
+    const bandFill =
+      `M ${bandTop.map((q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join(' L ')} ` +
+      `L ${bandBot.slice().reverse().map((q) => `${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join(' L ')} Z`;
+    const bandTone = hatch(seed, 'bandtone', {
+      x: CX - 410, y: CY - 100, w: 820, h: 130,
+      angle: 6, pitch: 3.6, amp: 0.7, coverage: 0.94, jitter: 0.25,
+      width: 0.85, samples: 14,
+      density: (u, v) => {
+        // Uncut highlight along the upper third; darker toward the lower edge.
+        const hl = 1 - Math.exp(-Math.pow((v - 0.28) / 0.13, 2));
+        return clamp01(hl * (0.45 + v * 0.85));
+      },
+    });
+
     // Pendant chains hanging from the band — the diadem's whole character.
     const chains = Array.from({ length: 27 }, (_, i) => {
       const u = (i + 0.5) / 27;
@@ -119,7 +136,7 @@ export const ArtifactPlate: React.FC<SceneProps> = ({
       density: (u, v) => clamp01(1 - Math.hypot((u - 0.5) * 1.5, (v - 0.42) * 1.9)),
     });
 
-    return { bandT, bandB, chains, hoardShapes, frame, scaleBar, ground, motes };
+    return { bandT, bandB, bandFill, bandTone, chains, hoardShapes, frame, scaleBar, ground, motes };
   }, [seed]);
 
   const p = clamp01(progress);
@@ -141,7 +158,7 @@ export const ArtifactPlate: React.FC<SceneProps> = ({
   // element that does the most work in selling the material.
   const gleam = rakingLight(frame, fps, 12, seed);
   const gleamU = lerp(-0.25, 1.25, gleam);
-  const metal = (u: number) => 1 + 1.5 * Math.exp(-Math.pow((u - gleamU) / 0.13, 2));
+  const metal = (u: number) => 0.72 + 1.1 * Math.exp(-Math.pow((u - gleamU) / 0.15, 2));
 
   return (
     <Plate seed={seed} frame={frame} fps={fps} tone="warm" lightPeriodSec={22} lightStrength={0.95}>
@@ -152,13 +169,28 @@ export const ArtifactPlate: React.FC<SceneProps> = ({
         }}
       >
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
-          <HatchField strokes={geo.ground.first} t={tGround} color={PLATE.cut} alpha={0.22} passes={5} />
+          <HatchField strokes={geo.ground.first} t={tGround} color={PLATE.cut} alpha={0.32} passes={5} />
           <HatchField strokes={geo.ground.second} t={ramp(p, 0.14, 0.5)} color={PLATE.cutDim} alpha={0.18} passes={4} />
           <StippleField dots={geo.motes} t={tGround} color={PLATE.cut} alpha={0.24} />
           <InkPath d={geo.frame.d} len={geo.frame.len} t={tFrame} color={PLATE.cutDim} width={1.2} opacity={0.5} />
 
           {artifact === 'diadem' ? (
             <g>
+              <defs>
+                <clipPath id={`band-${Math.round(seed * 1e6)}`}>
+                  <path d={geo.bandFill} />
+                </clipPath>
+              </defs>
+              <g clipPath={`url(#band-${Math.round(seed * 1e6)})`}>
+                <HatchField
+                  strokes={geo.bandTone}
+                  t={clamp01((tObject - 0.1) / 0.9)}
+                  color={PLATE.goldBright}
+                  alpha={0.9}
+                  passes={4}
+                  modulate={(st) => metal(st.k)}
+                />
+              </g>
               <InkPath d={geo.bandT.d} len={geo.bandT.len} t={tObject} color={PLATE.gold} width={2.4} opacity={0.95} />
               <InkPath d={geo.bandB.d} len={geo.bandB.len} t={clamp01((tObject - 0.08) / 0.92)} color={PLATE.gold} width={2.4} opacity={0.95} />
 
@@ -171,7 +203,7 @@ export const ArtifactPlate: React.FC<SceneProps> = ({
                 const swing = Math.sin(t * 0.55 * c.sway + c.phase) * 6 * c.sway;
                 const links = Math.max(2, Math.round(c.links * easeOutCubic(ct)));
                 return (
-                  <g key={i} opacity={metal(c.u) * 0.55}>
+                  <g key={i} opacity={Math.min(1, metal(c.u) * 0.9)}>
                     {Array.from({ length: links }, (_, k) => {
                       const f = k / Math.max(1, c.links - 1);
                       // The sway increases down the chain — a pendulum, not a

@@ -5,7 +5,7 @@ import {
   Plate, PLATE, HatchField, StippleField, InkPath, PlateCaption, Marginalia,
   hatch, hatchContours, stipple, contour, wobblyEllipse, segment, wobble,
   rngFor, makeFbm1D, lerp, clamp01,
-  onNs, rakingLight, ramp, stagger, settle, pulse, easeOutCubic, easeInOutCubic,
+  cycle, onNs, rakingLight, ramp, stagger, settle, pulse, easeOutCubic, easeInOutCubic,
 } from './engraving';
 
 /**
@@ -272,7 +272,7 @@ export const AegeanMap: React.FC<SceneProps> = ({
             const y = lerp(geo.eu[iE].y, geo.as[iA].y, s.lane);
             const fade = Math.sin(u * Math.PI);
             // The hull bobs on a held two-frame cycle, not a smooth sine.
-            const bob = (Math.floor(onNs(frame + i * 9, 8) / 8) % 2) * 1.2;
+            const bob = cycle(frame + i * 9, 8, 2) * 1.2;
             const sc = s.scale;
             return (
               <g

@@ -33,6 +33,8 @@ import { PipelineError } from './log.mjs';
 export const STYLES = {
   archival: {
     id: 'archival',
+    sceneLayerId: 'archival',
+    aliases: [],
     label: 'Archival',
     summary:
       'Engraved information design: strata columns, deep-time axes, claim ledgers and survey maps ' +
@@ -45,6 +47,8 @@ export const STYLES = {
   },
   'hand-drawn': {
     id: 'hand-drawn',
+    sceneLayerId: 'handdrawn',
+    aliases: ['handdrawn'],
     label: 'Hand-drawn',
     summary:
       'Period illustration: inked linework and washed colour, the look of a plate torn from a ' +
@@ -57,6 +61,8 @@ export const STYLES = {
   },
   cinematic: {
     id: 'cinematic',
+    sceneLayerId: 'cinematic',
+    aliases: [],
     label: 'Cinematic',
     summary:
       'Layered parallax and volumetric depth: dust in shafts of light, foreground silhouettes drifting ' +
@@ -69,6 +75,8 @@ export const STYLES = {
   },
   'motion-graphics': {
     id: 'motion-graphics',
+    sceneLayerId: 'graphic',
+    aliases: ['graphic', 'graphics'],
     label: 'Motion graphics',
     summary:
       'Kinetic typography led: the argument is set in type and moves with the voice. Numbers, dates and ' +
@@ -82,11 +90,29 @@ export const STYLES = {
 };
 
 export const STYLE_IDS = Object.freeze(Object.keys(STYLES));
-export const DEFAULT_STYLE = 'archival';
+
+/**
+ * The scene layer's own complete treatment is its hand-drawn one — the finished
+ * Troy scenes — so that is what a run defaults to. The other three exist there
+ * as comparison sketches covering a handful of shots; see `probeSceneLayer`.
+ */
+export const DEFAULT_STYLE = 'hand-drawn';
+
+/** Maps every accepted spelling, including the scene layer's, to a canonical id. */
+const ALIAS_TO_ID = new Map(
+  Object.values(STYLES).flatMap((s) => [
+    [s.id, s.id],
+    [s.sceneLayerId, s.id],
+    ...s.aliases.map((a) => [a, s.id]),
+  ])
+);
+
+/** Canonicalises a style id written in either vocabulary. */
+export const canonicalStyleId = (id) => ALIAS_TO_ID.get(String(id ?? '').toLowerCase()) ?? null;
 
 /** Resolves a style id, or fails with the list of valid ones. */
 export function resolveStyle(id = DEFAULT_STYLE) {
-  const style = STYLES[id];
+  const style = STYLES[canonicalStyleId(id) ?? id];
   if (!style) {
     throw new PipelineError(
       `Unknown visual style "${id}".`,
@@ -176,6 +202,7 @@ export function validateScene(scene, where = 'shot') {
 // ---------------------------------------------------------------------------
 
 const REGISTRY_PATH = path.join(ROOT, 'src', 'scenes', 'registry.ts');
+const STYLE_REGISTRY_PATH = path.join(ROOT, 'src', 'scenes', 'styles', 'registry.ts');
 
 /**
  * Reads src/scenes/registry.ts and reports what the scene layer can currently
@@ -191,25 +218,41 @@ const REGISTRY_PATH = path.join(ROOT, 'src', 'scenes', 'registry.ts');
  * @returns {{mode:'styled'|'legacy', styles:string[], hasResolveScene:boolean, registryPresent:boolean}}
  */
 export function probeSceneLayer() {
-  if (!existsSync(REGISTRY_PATH)) {
-    return { mode: 'legacy', styles: [DEFAULT_STYLE], hasResolveScene: false, registryPresent: false };
-  }
-  const src = readFileSync(REGISTRY_PATH, 'utf8');
+  const base = { styles: [DEFAULT_STYLE], mode: 'legacy', keying: 'none', registryPresent: existsSync(REGISTRY_PATH) };
+  if (!base.registryPresent) return base;
 
+  const main = readFileSync(REGISTRY_PATH, 'utf8');
+  const styleSrc = existsSync(STYLE_REGISTRY_PATH) ? readFileSync(STYLE_REGISTRY_PATH, 'utf8') : '';
+  const src = `${main}\n${styleSrc}`;
+
+  // The interface this pipeline asked for: (scene kind, style) -> component.
   const hasResolveScene = /export\s+(?:const|function)\s+resolveScene\b/.test(src);
+  // The interface the scene layer actually shipped: (shot id, style) -> component.
+  const hasShotInStyle = /export\s+(?:const|function)\s+sceneForShotInStyle\b/.test(src);
 
-  let styles = null;
-  const block = /export\s+const\s+AVAILABLE_STYLES\s*(?::[^=]+)?=\s*(\[[^\]]*\])/s.exec(src);
-  if (block) {
-    const found = [...block[1].matchAll(/['"]([a-z0-9-]+)['"]/gi)].map((m) => m[1]);
-    if (found.length) styles = found;
+  // Styles, from either an AVAILABLE_STYLES array or a StyleId union type.
+  let declared = null;
+  const arr = /export\s+const\s+AVAILABLE_STYLES\s*(?::[^=]+)?=\s*(\[[^\]]*\])/s.exec(src);
+  if (arr) declared = [...arr[1].matchAll(/['"]([a-z0-9-]+)['"]/gi)].map((m) => m[1]);
+  if (!declared?.length) {
+    const union = /export\s+type\s+StyleId\s*=\s*([^;]+);/s.exec(src);
+    if (union) declared = [...union[1].matchAll(/['"]([a-z0-9-]+)['"]/gi)].map((m) => m[1]);
   }
-  if (!styles) {
-    // No declared style set: the scene layer is the single-look version that
-    // shipped with the Troy video, which is the `archival` treatment.
-    return { mode: 'legacy', styles: [DEFAULT_STYLE], hasResolveScene, registryPresent: true };
-  }
-  return { mode: hasResolveScene ? 'styled' : 'legacy', styles, hasResolveScene, registryPresent: true };
+  if (!declared?.length) return { ...base, hasResolveScene, hasShotInStyle };
+
+  // Translate the scene layer's vocabulary into this pipeline's canonical ids,
+  // keeping anything it exposes that we have no name for.
+  const styles = [...new Set(declared.map((d) => canonicalStyleId(d) ?? d))];
+
+  return {
+    ...base,
+    styles,
+    sceneLayerStyles: declared,
+    hasResolveScene,
+    hasShotInStyle,
+    keying: hasResolveScene ? 'scene-kind' : hasShotInStyle ? 'shot-id' : 'none',
+    mode: hasResolveScene ? 'styled' : hasShotInStyle ? 'shot-keyed' : 'legacy',
+  };
 }
 
 /**
@@ -222,16 +265,38 @@ export function planStyle(requestedId) {
   const style = resolveStyle(requestedId);
   const layer = probeSceneLayer();
   const supported = layer.styles.includes(style.id);
+  const fallback = layer.styles.includes(DEFAULT_STYLE) ? DEFAULT_STYLE : layer.styles[0] ?? DEFAULT_STYLE;
+
+  const notes = [];
+  if (!supported) {
+    notes.push(
+      `The scene layer does not expose the "${style.id}" treatment (it exposes: ${layer.styles.join(', ')}). ` +
+        `The script, narration, shot plan and art direction are still built for "${style.id}" — only the ` +
+        `on-screen look falls back to "${fallback}". Re-render with --style=${style.id} once src/scenes/ ` +
+        'registers it; nothing upstream needs to re-run.'
+    );
+  }
+  if (layer.keying === 'shot-id') {
+    notes.push(
+      'The scene layer resolves scenes by *shot id* (sceneForShotInStyle) rather than by scene kind, and its ' +
+        'style variants are keyed to the hand-authored Troy shot ids. A generated topic has its own shot ids, ' +
+        'so every shot will fall through to the default scene and the film will render in one look regardless ' +
+        `of --style. The per-shot scene kinds this pipeline computed are still written into timing.json, so ` +
+        'this resolves the moment src/scenes/ reads shot.scene — see docs/scene-layer-contract.md.'
+    );
+  } else if (layer.keying === 'none') {
+    notes.push(
+      'The scene layer exposes no style-aware resolver yet, so every shot renders in its single existing look.'
+    );
+  }
+
   return {
     style,
     layer,
     supported,
-    effectiveStyleId: supported ? style.id : layer.styles[0] ?? DEFAULT_STYLE,
-    message: supported
-      ? null
-      : `The scene layer does not implement the "${style.id}" treatment yet ` +
-        `(it exposes: ${layer.styles.join(', ')}). The script, narration and shot plan are still built for ` +
-        `"${style.id}" — only the on-screen look falls back to "${layer.styles[0] ?? DEFAULT_STYLE}". ` +
-        `Re-render with --style=${style.id} once src/scenes/ registers it; nothing upstream needs to re-run.`,
+    effectiveStyleId: supported ? style.id : fallback,
+    /** What the renderer will actually honour, given how the scene layer keys scenes. */
+    styleReachesRender: supported && layer.keying === 'scene-kind',
+    message: notes.length ? notes.join('\n  ') : null,
   };
 }

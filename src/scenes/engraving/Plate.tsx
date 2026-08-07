@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
 import { rngFor, lerp, clamp01 } from './rand';
-import { onNs, rakingLight } from './timing';
+import { cycle, onNs, rakingLight } from './timing';
 import { WIDTH, HEIGHT } from '../../constants';
 
 /**
@@ -157,7 +157,7 @@ export const Plate: React.FC<PlateProps> = ({
     return { xs, ys, rs, steps };
   }, [seed]);
 
-  const regIdx = Math.floor(onNs(frame, 7) / 7) % reg.steps;
+  const regIdx = cycle(frame, 7, reg.steps);
   const rx = steady ? 0 : reg.xs[regIdx];
   const ry = steady ? 0 : reg.ys[regIdx];
   const rr = steady ? 0 : reg.rs[regIdx];
