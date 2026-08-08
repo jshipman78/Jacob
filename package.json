@@ -8,6 +8,8 @@
     "tts": "node scripts/tts.mjs",
     "images": "node scripts/gen-images.mjs",
     "render": "remotion render TroyVideo out/troy-video.mp4",
+    "short:tts": "node scripts/short-tts.mjs",
+    "short:render": "remotion render ProjectShort out/project-short.mp4",
     "make-video": "node pipeline/cli.mjs"
   },
   "dependencies": {

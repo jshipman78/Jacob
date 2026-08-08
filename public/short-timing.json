@@ -1,0 +1,464 @@
+{
+  "fps": 30,
+  "sampleRate": 24000,
+  "voice": "Voice2",
+  "speed": 1.08,
+  "durationSec": 30.000000000000004,
+  "durationInFrames": 900,
+  "lines": [
+    {
+      "id": "hook",
+      "scene": "hook",
+      "text": "I built a machine that makes documentaries.",
+      "start": 0.35,
+      "end": 3.23,
+      "sceneStart": 0,
+      "sceneEnd": 4.115666666666667,
+      "words": [
+        {
+          "word": "I",
+          "start": 0.35,
+          "end": 0.48434402332361515,
+          "emphasis": false
+        },
+        {
+          "word": "built",
+          "start": 0.48434402332361515,
+          "end": 0.8411953352769679,
+          "emphasis": false
+        },
+        {
+          "word": "a",
+          "start": 0.8411953352769679,
+          "end": 0.975539358600583,
+          "emphasis": false
+        },
+        {
+          "word": "machine",
+          "start": 0.975539358600583,
+          "end": 1.475131195335277,
+          "emphasis": true
+        },
+        {
+          "word": "that",
+          "start": 1.475131195335277,
+          "end": 1.7606122448979593,
+          "emphasis": false
+        },
+        {
+          "word": "makes",
+          "start": 1.7606122448979593,
+          "end": 2.117463556851312,
+          "emphasis": false
+        },
+        {
+          "word": "documentaries.",
+          "start": 2.117463556851312,
+          "end": 3.23,
+          "emphasis": true
+        }
+      ]
+    },
+    {
+      "id": "command",
+      "scene": "command",
+      "text": "One topic in. A finished film out.",
+      "start": 4.115666666666667,
+      "end": 6.633,
+      "sceneStart": 3.7656666666666667,
+      "sceneEnd": 7.412142857142857,
+      "words": [
+        {
+          "word": "One",
+          "start": 4.115666666666667,
+          "end": 4.351233639143731,
+          "emphasis": true
+        },
+        {
+          "word": "topic",
+          "start": 4.351233639143731,
+          "end": 4.743845259938839,
+          "emphasis": false
+        },
+        {
+          "word": "in.",
+          "start": 4.743845259938839,
+          "end": 5.104124159021407,
+          "emphasis": false
+        },
+        {
+          "word": "A",
+          "start": 5.104124159021407,
+          "end": 5.251930886850153,
+          "emphasis": false
+        },
+        {
+          "word": "finished",
+          "start": 5.251930886850153,
+          "end": 5.880109480122324,
+          "emphasis": false
+        },
+        {
+          "word": "film",
+          "start": 5.880109480122324,
+          "end": 6.19419877675841,
+          "emphasis": true
+        },
+        {
+          "word": "out.",
+          "start": 6.19419877675841,
+          "end": 6.633,
+          "emphasis": false
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "scene": "research",
+      "text": "It researches live. If it can't reach the web, it refuses to write.",
+      "start": 7.412142857142857,
+      "end": 11.700142857142858,
+      "sceneStart": 7.062142857142858,
+      "sceneEnd": 12.42602380952381,
+      "words": [
+        {
+          "word": "It",
+          "start": 7.412142857142857,
+          "end": 7.555638920134983,
+          "emphasis": false
+        },
+        {
+          "word": "researches",
+          "start": 7.555638920134983,
+          "end": 8.273119235095614,
+          "emphasis": false
+        },
+        {
+          "word": "live.",
+          "start": 8.273119235095614,
+          "end": 8.74581214848144,
+          "emphasis": true
+        },
+        {
+          "word": "If",
+          "start": 8.74581214848144,
+          "end": 8.889308211473566,
+          "emphasis": false
+        },
+        {
+          "word": "it",
+          "start": 8.889308211473566,
+          "end": 9.032804274465692,
+          "emphasis": false
+        },
+        {
+          "word": "can't",
+          "start": 9.032804274465692,
+          "end": 9.391544431946006,
+          "emphasis": false
+        },
+        {
+          "word": "reach",
+          "start": 9.391544431946006,
+          "end": 9.75028458942632,
+          "emphasis": false
+        },
+        {
+          "word": "the",
+          "start": 9.75028458942632,
+          "end": 9.965528683914508,
+          "emphasis": false
+        },
+        {
+          "word": "web,",
+          "start": 9.965528683914508,
+          "end": 10.366473565804272,
+          "emphasis": false
+        },
+        {
+          "word": "it",
+          "start": 10.366473565804272,
+          "end": 10.509969628796398,
+          "emphasis": false
+        },
+        {
+          "word": "refuses",
+          "start": 10.509969628796398,
+          "end": 11.012205849268838,
+          "emphasis": true
+        },
+        {
+          "word": "to",
+          "start": 11.012205849268838,
+          "end": 11.155701912260964,
+          "emphasis": false
+        },
+        {
+          "word": "write.",
+          "start": 11.155701912260964,
+          "end": 11.700142857142854,
+          "emphasis": false
+        }
+      ]
+    },
+    {
+      "id": "claims",
+      "scene": "claims",
+      "text": "Every claim is attacked by a fact-checker paid to kill it.",
+      "start": 12.42602380952381,
+      "end": 15.88202380952381,
+      "sceneStart": 12.07602380952381,
+      "sceneEnd": 16.55464285714286,
+      "words": [
+        {
+          "word": "Every",
+          "start": 12.42602380952381,
+          "end": 12.775322263744975,
+          "emphasis": false
+        },
+        {
+          "word": "claim",
+          "start": 12.775322263744975,
+          "end": 13.12462071796614,
+          "emphasis": false
+        },
+        {
+          "word": "is",
+          "start": 13.12462071796614,
+          "end": 13.264340099654607,
+          "emphasis": false
+        },
+        {
+          "word": "attacked",
+          "start": 13.264340099654607,
+          "end": 13.823217626408471,
+          "emphasis": true
+        },
+        {
+          "word": "by",
+          "start": 13.823217626408471,
+          "end": 13.962937008096937,
+          "emphasis": false
+        },
+        {
+          "word": "a",
+          "start": 13.962937008096937,
+          "end": 14.094437602627258,
+          "emphasis": false
+        },
+        {
+          "word": "fact-checker",
+          "start": 14.094437602627258,
+          "end": 14.862894201913821,
+          "emphasis": false
+        },
+        {
+          "word": "paid",
+          "start": 14.862894201913821,
+          "end": 15.142332965290754,
+          "emphasis": false
+        },
+        {
+          "word": "to",
+          "start": 15.142332965290754,
+          "end": 15.28205234697922,
+          "emphasis": false
+        },
+        {
+          "word": "kill",
+          "start": 15.28205234697922,
+          "end": 15.561491110356153,
+          "emphasis": true
+        },
+        {
+          "word": "it.",
+          "start": 15.561491110356153,
+          "end": 15.88202380952381,
+          "emphasis": false
+        }
+      ]
+    },
+    {
+      "id": "verdicts",
+      "scene": "verdicts",
+      "text": "Unproven? Cut. Disputed? It says so out loud.",
+      "start": 16.55464285714286,
+      "end": 19.967976190476193,
+      "sceneStart": 16.204642857142858,
+      "sceneEnd": 20.74711904761905,
+      "words": [
+        {
+          "word": "Unproven?",
+          "start": 16.55464285714286,
+          "end": 17.369496968548695,
+          "emphasis": false
+        },
+        {
+          "word": "Cut.",
+          "start": 17.369496968548695,
+          "end": 17.799558860679554,
+          "emphasis": true
+        },
+        {
+          "word": "Disputed?",
+          "start": 17.799558860679554,
+          "end": 18.61441297208539,
+          "emphasis": false
+        },
+        {
+          "word": "It",
+          "start": 18.61441297208539,
+          "end": 18.76832985979538,
+          "emphasis": false
+        },
+        {
+          "word": "says",
+          "start": 18.76832985979538,
+          "end": 19.076163635215362,
+          "emphasis": false
+        },
+        {
+          "word": "so",
+          "start": 19.076163635215362,
+          "end": 19.230080522925352,
+          "emphasis": false
+        },
+        {
+          "word": "out",
+          "start": 19.230080522925352,
+          "end": 19.46095585449034,
+          "emphasis": false
+        },
+        {
+          "word": "loud.",
+          "start": 19.46095585449034,
+          "end": 19.967976190476193,
+          "emphasis": true
+        }
+      ]
+    },
+    {
+      "id": "render",
+      "scene": "render",
+      "text": "Then it narrates, animates, and renders itself.",
+      "start": 20.74711904761905,
+      "end": 23.584452380952385,
+      "sceneStart": 20.39711904761905,
+      "sceneEnd": 24.257071428571432,
+      "words": [
+        {
+          "word": "Then",
+          "start": 20.74711904761905,
+          "end": 20.995112192434817,
+          "emphasis": false
+        },
+        {
+          "word": "it",
+          "start": 20.995112192434817,
+          "end": 21.1191087648427,
+          "emphasis": false
+        },
+        {
+          "word": "narrates,",
+          "start": 21.1191087648427,
+          "end": 21.775561207002085,
+          "emphasis": false
+        },
+        {
+          "word": "animates,",
+          "start": 21.775561207002085,
+          "end": 22.43201364916147,
+          "emphasis": false
+        },
+        {
+          "word": "and",
+          "start": 22.43201364916147,
+          "end": 22.618008507773293,
+          "emphasis": false
+        },
+        {
+          "word": "renders",
+          "start": 22.618008507773293,
+          "end": 23.051996511200887,
+          "emphasis": true
+        },
+        {
+          "word": "itself.",
+          "start": 23.051996511200887,
+          "end": 23.584452380952385,
+          "emphasis": false
+        }
+      ]
+    },
+    {
+      "id": "output",
+      "scene": "output",
+      "text": "Fourteen minutes. Cited line by line.",
+      "start": 24.257071428571432,
+      "end": 27.00907142857143,
+      "sceneStart": 23.90707142857143,
+      "sceneEnd": 27.948000000000004,
+      "words": [
+        {
+          "word": "Fourteen",
+          "start": 24.257071428571432,
+          "end": 24.88294433827043,
+          "emphasis": true
+        },
+        {
+          "word": "minutes.",
+          "start": 24.88294433827043,
+          "end": 25.633071428571434,
+          "emphasis": false
+        },
+        {
+          "word": "Cited",
+          "start": 25.633071428571434,
+          "end": 26.024241997133306,
+          "emphasis": true
+        },
+        {
+          "word": "line",
+          "start": 26.024241997133306,
+          "end": 26.337178451982805,
+          "emphasis": false
+        },
+        {
+          "word": "by",
+          "start": 26.337178451982805,
+          "end": 26.493646679407554,
+          "emphasis": false
+        },
+        {
+          "word": "line.",
+          "start": 26.493646679407554,
+          "end": 27.009071428571435,
+          "emphasis": false
+        }
+      ]
+    },
+    {
+      "id": "endcard",
+      "scene": "endcard",
+      "text": "One command.",
+      "start": 27.948000000000004,
+      "end": 29.100000000000005,
+      "sceneStart": 27.598000000000003,
+      "sceneEnd": 30.000000000000004,
+      "words": [
+        {
+          "word": "One",
+          "start": 27.948000000000004,
+          "end": 28.222542056074772,
+          "emphasis": true
+        },
+        {
+          "word": "command.",
+          "start": 28.222542056074772,
+          "end": 29.100000000000005,
+          "emphasis": true
+        }
+      ]
+    }
+  ]
+}
