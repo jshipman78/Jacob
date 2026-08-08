@@ -158,7 +158,42 @@ Full detail: [`docs/architecture.md`](docs/architecture.md).
 
 ---
 
-# The Troy video
+# The vertical short
+
+A 30-second 1080×1920 trailer for the pipeline itself — what it is, and why
+its output can be trusted. Same shop as the film (engraved plate, gold on a
+warm block, Kokoro narration), cut for a phone.
+
+```bash
+npm run short:tts      # narration + procedural under-score + short-timing.json
+npm run short:render   # -> out/project-short.mp4
+```
+
+```
+scripts/short-script.mjs   the eight spoken lines, their scenes and emphasis
+scripts/short-tts.mjs      synthesis, the 30.000s fit, and the music bed
+src/short/                 the ProjectShort composition and its scenes
+public/short-timing.json   per-line and per-word timing (generated)
+public/audio/short-vo.wav  narration stem (generated)
+public/audio/short-bed.wav under-score stem (generated, procedural — no licensed asset)
+public/audio/short-mix.wav the mastered mix — what the composition plays
+```
+
+Audio is mixed and mastered in the script, not in the composition: the bed is
+ducked under the speech, the two are summed, and the result is soft-limited to
+-1 dBFS peak at roughly -19 dBFS speech RMS. Handing Remotion two stems instead
+lets its own summing decide the balance and lands the file about 6dB quieter
+than anything else in a feed. `short:tts` prints every level it sets.
+
+The short is cut to the voice exactly as the film is: `short-tts.mjs` measures
+the real synthesized length of every line, then distributes the leftover time
+into the pauses between them so the piece lands on **30.000s** — 900 frames —
+without ever time-stretching the narrator. If the script grows past what fits,
+synthesis fails with the arithmetic rather than quietly rushing the delivery.
+
+Word timings inside a line are apportioned by weight, not measured; Kokoro
+returns audio per line. That is invisible at caption size and keeps the whole
+manifest one cheap pass.
 
 The hand-authored ~15-minute documentary about Heinrich Schliemann that this
 pipeline was generalized from. It still builds exactly as before; the pipeline

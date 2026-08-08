@@ -2,9 +2,12 @@ import React from 'react';
 import { Composition, staticFile } from 'remotion';
 import { TroyVideo } from './TroyVideo';
 import { StyleReel } from './StyleReel';
+import { ShortVideo } from './short/ShortVideo';
 import type { StyleId } from './scenes/styles/registry';
 import type { Timing } from './types';
+import type { ShortTiming } from './short/types';
 import { WIDTH, HEIGHT } from './constants';
+import { SHORT_W, SHORT_H, SHORT_FPS } from './short/theme';
 
 // An empty-but-well-typed timing manifest. Only used as the composition's
 // `defaultProps` placeholder before `calculateMetadata` fetches and
@@ -41,6 +44,19 @@ const REEL_START_FRAME = 8600;
 const REEL_DURATION_FRAMES = 1800; // 60s at 30fps
 
 const STYLES: StyleId[] = ['handdrawn', 'archival', 'cinematic', 'graphic'];
+
+/** The vertical short's own manifest, written by scripts/short-tts.mjs. */
+const SHORT_TIMING_PATH = 'short-timing.json';
+
+const EMPTY_SHORT_TIMING: ShortTiming = {
+  fps: SHORT_FPS,
+  sampleRate: 24000,
+  voice: '',
+  speed: 1,
+  durationSec: 1,
+  durationInFrames: 1,
+  lines: [],
+};
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -110,6 +126,31 @@ export const RemotionRoot: React.FC = () => {
         }}
       />
     ))}
+
+    <Composition
+      id="ProjectShort"
+      component={ShortVideo}
+      width={SHORT_W}
+      height={SHORT_H}
+      fps={SHORT_FPS}
+      durationInFrames={SHORT_FPS * 30}
+      defaultProps={{ timing: EMPTY_SHORT_TIMING }}
+      calculateMetadata={async ({ props }) => {
+        const response = await fetch(staticFile(SHORT_TIMING_PATH));
+        if (!response.ok) {
+          throw new Error(
+            `Could not load ${SHORT_TIMING_PATH} (HTTP ${response.status}). ` +
+              'Run `npm run short:tts` first.'
+          );
+        }
+        const timing = (await response.json()) as ShortTiming;
+        return {
+          fps: timing.fps,
+          durationInFrames: timing.durationInFrames,
+          props: { ...props, timing },
+        };
+      }}
+    />
     </>
   );
 };

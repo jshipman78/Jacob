@@ -22,6 +22,18 @@ export const VOICES = {
       'candidates, which suits long-form documentary narration and matches ' +
       'the American-style number expansions in the script.',
   },
+  Voice2: {
+    engine: 'kokoro',
+    model: 'bm_george',
+    speed: 1,
+    lang: 'en-gb',
+    description:
+      'British English, male, the most deliberate of Kokoro\'s eight en-GB ' +
+      'voices — measurably so: on an identical line it ran 7.25s against ' +
+      '5.50s for the briskest of them. Chosen for the vertical short. Note ' +
+      'the lang: en-gb is what gives the British vowels, and running a bm_ ' +
+      'voice at en-us produces an accent that slips rather than a dialect.',
+  },
 };
 
 export const DEFAULT_VOICE_NAME = 'Voice1';
