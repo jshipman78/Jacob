@@ -48,8 +48,14 @@ export const CHANNEL = {
 export const DEFAULT_MINUTES = 14;
 
 /**
- * Measured from the finished Troy video: 1,984 script words rendered to
- * 831.8 seconds of narration including every pause. Used to convert a target
- * runtime into a word budget the writer can actually hit.
+ * Measured from the Troy script: 1,984 words rendered to 831.8 seconds of
+ * narration including every pause. Used to convert a target runtime into a
+ * word budget the writer can actually hit.
+ *
+ * The figure is Voice1's, which is the one that matters — `CHANNEL.voice`
+ * above is what the pipeline narrates with, so that is what the budget has to
+ * be calibrated against. The same script in Voice2 runs 822.3 seconds, or
+ * about 145 wpm; re-measure this constant if the channel voice ever changes,
+ * because a 2 wpm error is roughly twenty words across a fourteen-minute film.
  */
 export const WORDS_PER_MINUTE = 143;
