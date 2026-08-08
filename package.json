@@ -5,7 +5,7 @@
   "description": "The Man Who Lied His Way to Troy — Remotion documentary video with TTS narration, subtitles, and AI-generated artwork",
   "scripts": {
     "dev": "remotion studio",
-    "tts": "node scripts/tts.mjs",
+    "tts": "node scripts/tts.mjs --voice=Voice2",
     "images": "node scripts/gen-images.mjs",
     "render": "remotion render TroyVideo out/troy-video.mp4",
     "short:tts": "node scripts/short-tts.mjs",

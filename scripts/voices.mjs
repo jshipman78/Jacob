@@ -30,9 +30,12 @@ export const VOICES = {
     description:
       'British English, male, the most deliberate of Kokoro\'s eight en-GB ' +
       'voices — measurably so: on an identical line it ran 7.25s against ' +
-      '5.50s for the briskest of them. Chosen for the vertical short. Note ' +
-      'the lang: en-gb is what gives the British vowels, and running a bm_ ' +
-      'voice at en-us produces an accent that slips rather than a dialect.',
+      '5.50s for the briskest of them. Chosen for the vertical short, and ' +
+      'since adopted for the Troy documentary as well, which is why ' +
+      '`npm run tts` pins it explicitly. The pipeline still narrates ' +
+      'generated films with Voice1 (see CHANNEL.voice). Note the lang: en-gb ' +
+      'is what gives the British vowels, and running a bm_ voice at en-us ' +
+      'produces an accent that slips rather than a dialect.',
   },
 };
 
