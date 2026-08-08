@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "shipman-video",
+  "description": "Local marketplace for the documentary production tooling in this repository.",
+  "owner": {
+    "name": "Joe Shipman"
+  },
+  "plugins": [
+    {
+      "name": "video-guy",
+      "description": "Documentary video production system: an executive-producer agent, a per-film producer, and eleven specialists driving the repo's deterministic make-video pipeline.",
+      "author": {
+        "name": "Joe Shipman"
+      },
+      "category": "media",
+      "source": "./plugins/video-guy"
+    }
+  ]
+}
