@@ -252,7 +252,47 @@ export function probeSceneLayer() {
     hasShotInStyle,
     keying: hasResolveScene ? 'scene-kind' : hasShotInStyle ? 'shot-id' : 'none',
     mode: hasResolveScene ? 'styled' : hasShotInStyle ? 'shot-keyed' : 'legacy',
+    coverage: readCoverage(src),
+    portableKinds: readPortableKinds(src),
   };
+}
+
+/** Pulls a literal `export const NAME = ['a', 'b']` out of source text. */
+function readLiteralArray(src, name) {
+  const m = new RegExp(`export\\s+const\\s+${name}\\s*(?::[^=]+)?=\\s*(\\[[^\\]]*\\])`, 's').exec(src);
+  return m ? [...m[1].matchAll(/['"]([^'"]+)['"]/g)].map((x) => x[1]) : null;
+}
+
+/**
+ * Which scene kinds each style actually treats natively, from the scene
+ * layer's `SCENE_COVERAGE` — a flat array of "<style>:<kind>" pairs, kept flat
+ * precisely so it can be read without a TypeScript build.
+ *
+ * Absent coverage is not an error: it means the scene layer has not declared
+ * any, and the CLI simply says nothing about it rather than guessing.
+ */
+function readCoverage(src) {
+  const pairs = readLiteralArray(src, 'SCENE_COVERAGE');
+  if (!pairs?.length) return null;
+  const out = {};
+  for (const pair of pairs) {
+    const [style, kind] = pair.split(':');
+    if (!style || !kind) continue;
+    const id = canonicalStyleId(style) ?? style;
+    (out[id] ??= []).push(kind);
+  }
+  return out;
+}
+
+/**
+ * Scene kinds the layer can render for *any* topic. The rest draw content from
+ * the hand-authored film and are degraded by the scene layer when a generated
+ * topic supplies its own data — which the pipeline reports rather than letting
+ * a viewer discover it.
+ */
+function readPortableKinds(src) {
+  const kinds = readLiteralArray(src, 'PORTABLE_KINDS');
+  return kinds?.length ? kinds.filter((k) => SCENE_KIND_IDS.includes(k)) : null;
 }
 
 /**
@@ -287,6 +327,33 @@ export function planStyle(requestedId) {
   } else if (layer.keying === 'none') {
     notes.push(
       'The scene layer exposes no style-aware resolver yet, so every shot renders in its single existing look.'
+    );
+  }
+
+  // Resolving by scene kind is necessary for a style to reach a generated
+  // topic; it is not sufficient for the style to reach every *shot*. Say which
+  // beats will fall back, rather than letting it be discovered at frame 9,000.
+  const covered = layer.coverage?.[supported ? style.id : fallback];
+  if (covered && covered.length < SCENE_KIND_IDS.length) {
+    const uncovered = SCENE_KIND_IDS.filter((k) => !covered.includes(k));
+    notes.push(
+      `"${supported ? style.id : fallback}" natively treats ${covered.length} of ${SCENE_KIND_IDS.length} scene kinds ` +
+        `(${covered.join(', ')}). The rest — ${uncovered.join(', ')} — fall through to the base ` +
+        `"${DEFAULT_STYLE}" scenes, so those beats will not carry the chosen look.`
+    );
+  }
+
+  // Four scenes draw their content from the hand-authored film rather than
+  // from their options. The scene layer degrades them rather than putting the
+  // Aegean under a film about somewhere else; that is the right call, and it
+  // is also a thing the person watching the render should be told once.
+  if (layer.portableKinds && layer.portableKinds.length < SCENE_KIND_IDS.length) {
+    const locked = SCENE_KIND_IDS.filter((k) => !layer.portableKinds.includes(k));
+    notes.push(
+      `${locked.length} scene kinds — ${locked.join(', ')} — still draw their content from the hand-authored ` +
+        'film rather than from the options this pipeline fills. For a generated topic the scene layer renders ' +
+        'those beats as atmosphere instead of showing the wrong map, phases or people. They become real the ' +
+        'moment those scenes read their options; nothing here needs to change when they do.'
     );
   }
 

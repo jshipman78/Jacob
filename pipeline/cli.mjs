@@ -27,7 +27,7 @@ import { slugify, workDir, outDir, ensureDir, overlayPublic, overlayTiming, rel,
 import { PipelineError, reportFatal, info, warn, step, stageStart, stageEnd, bold, dim, green, yellow } from './core/log.mjs';
 import { costSoFar } from './core/llm.mjs';
 import { stageStatus, clearStage } from './core/cache.mjs';
-import { STYLES, STYLE_IDS, DEFAULT_STYLE, planStyle, probeSceneLayer } from './core/styles.mjs';
+import { STYLES, STYLE_IDS, DEFAULT_STYLE, SCENE_KIND_IDS, planStyle, probeSceneLayer } from './core/styles.mjs';
 import { CHANNEL, DEFAULT_MINUTES } from './channel.mjs';
 
 import { researchStage, assertResearchUsable } from './stages/research.mjs';
@@ -166,13 +166,37 @@ ${bold('OTHER')}
 
 function printStyles() {
   const layer = probeSceneLayer();
+  const kindCount = SCENE_KIND_IDS.length;
   process.stdout.write(`\n${bold('Visual styles')}\n\n`);
   for (const id of STYLE_IDS) {
     const s = STYLES[id];
     const ready = layer.styles.includes(id);
+    const covered = layer.coverage?.[id];
+    // "implemented" alone would read as complete for a style that treats three
+    // of nine scene kinds and falls through to the base scenes for the rest.
+    const status = !ready
+      ? yellow('not yet in the scene layer')
+      : !covered
+        ? green('implemented')
+        : covered.length >= kindCount
+          ? green(`implemented · all ${kindCount} scene kinds`)
+          : yellow(`partial · ${covered.length}/${kindCount} scene kinds`);
     process.stdout.write(
-      `  ${bold(id.padEnd(17))}${ready ? green('implemented') : yellow('not yet in the scene layer')}\n` +
-        `  ${' '.repeat(17)}${dim(s.summary)}\n\n`
+      `  ${bold(id.padEnd(17))}${status}\n` +
+        `  ${' '.repeat(17)}${dim(s.summary)}\n` +
+        (covered && covered.length < kindCount
+          ? `  ${' '.repeat(17)}${dim(`natively: ${covered.join(', ')} — other kinds render in ${DEFAULT_STYLE}`)}\n`
+          : '') +
+        '\n'
+    );
+  }
+  if (layer.portableKinds && layer.portableKinds.length < kindCount) {
+    const locked = SCENE_KIND_IDS.filter((k) => !layer.portableKinds.includes(k));
+    process.stdout.write(
+      dim(
+        `  ${locked.join(', ')} still draw content from the hand-authored film, so for a generated topic\n` +
+          '  the scene layer renders those beats as atmosphere rather than showing the wrong picture.\n\n'
+      )
     );
   }
   const keying = {
@@ -388,7 +412,21 @@ async function main() {
             'See docs/scene-layer-contract.md — this becomes a real four-way comparison as soon as ' +
             'src/scenes/ reads shot.scene.'
         );
-      } else if (skipped.length) {
+      } else if (renderable.some((id) => (layer.coverage?.[id]?.length ?? Infinity) < SCENE_KIND_IDS.length)) {
+        // Every style resolves by scene kind now, so a comparison is real — but
+        // only for the kinds a style actually treats. If the sample window
+        // happens to sit on kinds it does not, two reels will look alike, and
+        // that is a gap in the scene layer rather than a verdict on the style.
+        const partial = renderable
+          .filter((id) => (layer.coverage?.[id]?.length ?? Infinity) < SCENE_KIND_IDS.length)
+          .map((id) => `${id} (${layer.coverage[id].length}/${SCENE_KIND_IDS.length})`);
+        warn(
+          `Partial scene-kind coverage: ${partial.join(', ')}. Those styles differ from the base only on the ` +
+            'kinds they implement; where the sample window sits on another kind, the reels will look alike. ' +
+            'Run --list-styles for the per-style breakdown.'
+        );
+      }
+      if (skipped.length) {
         warn(
           `Only ${renderable.length} of ${STYLE_IDS.length} styles are implemented by the scene layer. ` +
             `Skipping ${skipped.join(', ')} — rendering them now would produce identical clips under different ` +
