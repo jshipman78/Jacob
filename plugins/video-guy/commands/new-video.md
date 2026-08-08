@@ -1,6 +1,6 @@
 ---
 description: Greenlight a documentary and run it end to end under a producer
-argument-hint: "<topic>" [--minutes=14] [--style=archival] [--cap=25]
+argument-hint: '"<topic>" [--minutes=14] [--style=archival] [--cap=25]'
 ---
 
 # New video

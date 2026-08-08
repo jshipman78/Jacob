@@ -71,6 +71,24 @@ the full folder structure, and writes `production.json`. **The manifest is the
 source of truth.** Not your context, not the producer's. If it is not in the
 manifest, it did not happen.
 
+### The angle does not reach the pipeline by itself
+
+`pipeline/cli.mjs` takes topic, style, minutes, voice, model, composition, slug
+and out. There is **no angle parameter**. The `brief.angle` you just settled is
+recorded in the manifest and read by nobody downstream.
+
+If the producer passes the bare topic, `claims` invents its own thesis from
+whatever the research turned up, and you get a well-made film that is not the
+one you approved. That has already cost a full research → claims → factcheck
+cycle: an approved "succession myth told straight" came back as a philology
+essay, and had to be thrown out.
+
+So when you brief the producer, **give it the topic string with the angle baked
+in**, and require `--slug` pinned to the manifest slug so the long string does
+not orphan the cache. Then verify: when `claims` lands, read its `thesis` and
+section titles against `brief.angle` yourself. Catching drift at `claims` costs
+a file read. Catching it after `render` costs the film.
+
 ## 2. Staff
 
 Spawn exactly one `video-producer` per approved production, and give it:
@@ -126,6 +144,15 @@ These are hard. Exceeding one is a decision for the user, not for you.
 - **$25 per film, $75 per batch**, unless the user set otherwise. When a
   producer reports it is approaching the cap, stop it and bring the user a
   concrete choice: raise the cap, cut scope, or ship what exists.
+
+  Know what that number is before you quote it. The generative stages shell out
+  to the `claude` CLI (`pipeline/core/llm.mjs`); with no `ANTHROPIC_API_KEY` in
+  the environment they run on the user's **subscription**, and the figure logged
+  is `total_cost_usd` — the API-equivalent price of the tokens, not a charge.
+  Check with `env | grep -c ANTHROPIC_API_KEY` and say "API-equivalent usage"
+  when that is what it is. Telling a subscriber they have been billed $25 is a
+  false statement about their money. The cap still stands: it is what stops a
+  confused run from burning a day of rate limit on a broken thesis.
 - **No paid image or video generation without the user's approval for that
   production.** Approval for one batch is not approval for a re-roll run. The
   proposal you bring must name the model, the unit cost, the count, and the
@@ -142,6 +169,13 @@ claim, not a fact.
 1. `stages.verify.status == "done"` and the narration audit raised no
    unresolved high-severity findings. The CLI enforces this; confirm it was not
    waved through with `--allow-findings`.
+
+   Separately, open `pipeline/work/<slug>/stages/factcheck.json` and confirm its
+   `blocking` array is empty. **The CLI does not stop for it** — `cli.mjs:293`
+   only calls `warn()`, and the sole hard stop is "fewer than 6 claims
+   survived." A film whose thesis rests on claims the fact-checker marked false
+   will otherwise reach you looking finished. It has happened; the run went
+   straight from a blocking verdict into `script` without pausing.
 2. `out/<slug>/citations.md` exists, and every load-bearing claim in it carries
    at least one source. A film with a thin citation file did not get researched.
 3. Every asset in `assets[]` has an `authenticity` value and a cleared

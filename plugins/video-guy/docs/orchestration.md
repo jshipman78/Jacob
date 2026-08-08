@@ -76,6 +76,33 @@ runs concurrently — dispatch all of `next`'s runnable list in one message.
 The widest fan-out is after `storyboard`: archival, generated and motion all run
 at once, while `narrate → sound`, `captions` and `citations` run alongside them.
 
+### Executing the CLI stages — three corrections
+
+These are not style preferences. Each one has already broken a run.
+
+1. **Foreground only.** Never start `cli.mjs` with `run_in_background`, `&`,
+   `nohup`, or a Monitor you then end your turn on. A background child is owned
+   by the agent session that spawned it and is killed when that session ends —
+   silently, mid-stage. One production lost its run this way: `research`
+   finished, the agent's turn ended, the process died, and the manifest read
+   "running" for two and a half hours. Block on the call with `timeout: 600000`.
+   If the work genuinely exceeds one call, run consecutive foreground segments
+   and check `--status` between them.
+
+2. **`--only=<stage>` does not isolate a stage.** The `--help` text claims it
+   runs exactly one; it was observed running research → claims → factcheck and
+   onward. Steer with the cache instead — a key hashes `{stage, version,
+   inputs}` (`pipeline/core/cache.mjs:68`), so unchanged inputs are reused free
+   and changed inputs recompute. Invoke the pipeline plainly; use `--refresh` to
+   discard deliberately and `--from` to re-enter partway.
+
+3. **The brief does not reach the pipeline.** There is no `--angle` parameter,
+   so `brief.angle` steers nothing. Bake the angle into the **topic string** —
+   it is the only steering input — and always pass `--slug` pinned to the
+   manifest slug, because the topic is part of every cache key and a reworded
+   topic orphans the entire cache. After `claims` lands, diff its `thesis` and
+   section titles against `brief.angle` before `script` runs.
+
 ---
 
 ## 3. State
@@ -132,8 +159,21 @@ is for.
 | Per batch | $75 |
 | Paid image/video generation | requires the user's explicit approval, per production |
 
+**These are API-equivalent figures, not necessarily charges.** Generative stages
+shell out to the `claude` CLI (`pipeline/core/llm.mjs`); absent an
+`ANTHROPIC_API_KEY` they authenticate as the logged-in user and draw against a
+subscription, and the recorded number is `total_cost_usd` — what the tokens
+would have cost at API rates. Check the regime (`env | grep -c
+ANTHROPIC_API_KEY`) before reporting, and say "API-equivalent usage" when that
+is what it is. Never tell a subscriber they were billed. The caps still bind:
+they are what keeps a confused run from spending a day's rate limit rendering a
+broken thesis. Paid image/video generation is separate and *is* real money.
+
 Every spend is logged as it happens: `production.mjs cost <id> <stage> <usd>
-"<what>"`. The command exits non-zero over the cap.
+"<what>"`. The command exits non-zero over the cap. Do not reconstruct totals
+from memory at the end of a run — `pipeline/work/<slug>/llm-calls.jsonl` already
+records every call with its `label` and `costUsd`. Read that file and mirror it
+into the manifest stage by stage.
 
 Approaching a cap is a decision, not an emergency: stop, and bring the user a
 concrete choice — raise the cap, cut scope, or ship what exists. Never spend past
@@ -156,7 +196,13 @@ Never:
 - retry a fourth time hoping for different output;
 - route around a failing stage by hand-writing its artifact;
 - substitute a weaker output and continue silently;
-- mark a stage `done` when its artifact is missing or malformed.
+- mark a stage `done` when its artifact is missing or malformed;
+- **end a turn to wait.** Ending a turn is not pausing — it is exiting, and the
+  work you launched dies with you. "Holding on the monitor" is a run bleeding
+  out quietly. Stay inside the blocking call. An agent may end its turn only
+  when the film is finished and verified, a stage has failed three times,
+  `factcheck` returned a non-empty `blocking` array, or a decision is needed
+  that belongs to Video Guy or the user. Waiting is not on that list.
 
 **Invalidation.** Re-running a stage marks everything downstream `stale`:
 `production.mjs stage <id> <stage> done --invalidate`. A stale stage must re-run
@@ -171,7 +217,11 @@ A film may be reported finished only when all of these hold, verified against
 files on disk:
 
 1. `verify` passed with no unresolved high-severity findings, and `--allow-findings`
-   was not used.
+   was not used. **And `factcheck.json`'s `blocking` array is empty** — the CLI
+   only `warn()`s on it (`cli.mjs:293`) and its one hard stop is "fewer than 6
+   claims survived," so a film built on a condemned thesis will otherwise pass
+   through unremarked. Whoever is driving the pipeline reads that array the
+   moment the stage lands, and kills the run before `script` consumes it.
 2. `out/<slug>/citations.md` exists, and load-bearing claims carry sources.
 3. Every asset has an `authenticity` value and a cleared `rights.status`. An AI
    recreation catalogued as archival is a shipping-stop defect.
