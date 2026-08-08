@@ -3,8 +3,7 @@ import { AbsoluteFill, Sequence, interpolate, useCurrentFrame, useVideoConfig } 
 import type { ShotTiming } from '../types';
 import { SHOT_CROSSFADE_SEC } from '../constants';
 import { hashStringToUnitFloat } from '../lib/hash';
-import type { StyleId } from '../scenes/styles/registry';
-import { sceneForShotInStyle } from '../scenes/styles/registry';
+import { resolveScene, sceneForShotInStyle } from '../scenes/styles/registry';
 
 type ShotLayerProps = {
   shot: ShotTiming;
@@ -17,9 +16,12 @@ type ShotLayerProps = {
   localStartFrame: number;
   shotDurationFrames: number;
   crossfadeFrames: number;
-  /** Alternate visual direction, for the comparison reels. Omitted (or
-   *  'handdrawn') on the real film. */
-  style?: StyleId;
+  /**
+   * The run's visual style, in either vocabulary ('hand-drawn' from the
+   * pipeline, 'handdrawn' from the comparison reels). Omitted on the
+   * hand-authored film, which renders in the base style.
+   */
+  style?: string;
 };
 
 /**
@@ -48,7 +50,14 @@ const ShotLayer: React.FC<ShotLayerProps> = ({
     extrapolateRight: 'clamp',
   });
 
-  const { Component, options } = sceneForShotInStyle(shot.imageId, style);
+  // A shot carrying a `scene` came from the pipeline, which chose a scene
+  // *kind* for it; one without came from the hand-authored script, whose shots
+  // are placed by id. Preferring `shot.scene` is what lets --style reach a
+  // generated topic at all — its shot ids are its own, so the by-id tables
+  // would miss every one of them and the whole film would render as one look.
+  const { Component, options } = shot.scene
+    ? resolveScene(shot.scene, style)
+    : sceneForShotInStyle(shot.imageId, style);
 
   // Scenes animate themselves against their own progress, so a shot that runs
   // 5s and one that runs 55s each reveal fully over their own duration.
@@ -75,7 +84,8 @@ type ShotScenesProps = {
   shots: ShotTiming[];
   fps: number;
   totalDurationInFrames: number;
-  style?: StyleId;
+  /** Either vocabulary; see ShotLayerProps.style. */
+  style?: string;
 };
 
 export const ShotScenes: React.FC<ShotScenesProps> = ({

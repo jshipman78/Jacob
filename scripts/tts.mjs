@@ -40,6 +40,26 @@ const VOICES_PATH = path.join(KOKORO_DIR, 'voices-v1.0.bin');
 const OUT_AUDIO = path.join(ROOT, 'public', 'audio', 'narration.wav');
 const OUT_TIMING = path.join(ROOT, 'public', 'timing.json');
 
+// The Kokoro runtime (kokoro-onnx, phonemizer, onnxruntime) is best installed
+// into a project-local virtualenv, leaving the machine's shared interpreter
+// untouched. Prefer that venv's python when one exists so no command has to be
+// run from an activated shell. The search walks up from this file rather than
+// looking only at ROOT, because narrate.mjs mirrors this script into
+// pipeline/work/<slug>/rt/scripts/ — where ROOT is the overlay, not the repo.
+// Falling back to `python3` on PATH stays correct when the deps were installed
+// globally, or when the caller has already activated a venv themselves; PYTHON
+// overrides both.
+function resolvePython() {
+  if (process.env.PYTHON) return process.env.PYTHON;
+  for (let dir = __dirname; ; dir = path.dirname(dir)) {
+    const candidate = path.join(dir, '.venv', 'bin', 'python3');
+    if (existsSync(candidate)) return candidate;
+    if (path.dirname(dir) === dir) return 'python3';
+  }
+}
+
+const PYTHON = resolvePython();
+
 const SAMPLE_RATE = 24000;
 const FPS = 30;
 const LEAD_IN_SEC = 0.5;
@@ -142,11 +162,12 @@ async function synthesizeMissing(sentences) {
   }
 
   console.log(`Synthesizing ${jobs.length}/${sentences.length} sentence(s) (cache miss)...`);
+  console.log(`  python: ${PYTHON}`);
 
   await mkdir(CACHE_DIR, { recursive: true });
 
   const worker = spawn(
-    'python3',
+    PYTHON,
     [
       path.join(__dirname, 'kokoro_worker.py'),
       '--model',

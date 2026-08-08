@@ -1,0 +1,17 @@
+{
+  "name": "video-guy",
+  "version": "1.0.0",
+  "description": "Documentary video production system. Video Guy runs the slate; a Video Producer runs each film; specialist agents research, fact-check, architect, write, direct, source, narrate, edit and QC it. Drives the repo's deterministic make-video pipeline rather than improvising the edit.",
+  "author": {
+    "name": "Joe Shipman"
+  },
+  "license": "MIT",
+  "keywords": [
+    "video",
+    "documentary",
+    "remotion",
+    "ffmpeg",
+    "history",
+    "orchestration"
+  ]
+}

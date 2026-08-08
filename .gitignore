@@ -10,3 +10,10 @@ src/scenes/__preview*/
 
 # generated pipeline working state
 pipeline/work/
+
+# production manifests are tracked; the media they point at is not
+productions/*/assets/
+productions/*/audio/*.wav
+productions/*/qc/frames/
+
+.DS_Store

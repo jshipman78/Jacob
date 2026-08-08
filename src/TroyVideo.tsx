@@ -41,6 +41,7 @@ export const TroyVideo: React.FC<TroyVideoProps> = ({ timing }) => {
         shots={timing.shots}
         fps={timing.fps}
         totalDurationInFrames={durationInFrames}
+        style={timing.style}
       />
       <Vignette />
       <SectionTitles sections={timing.sections} fps={timing.fps} />
