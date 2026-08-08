@@ -200,14 +200,19 @@ export async function callClaude({
 
   const missing = requireTools.filter((t) => !toolCounts[t]);
   if (missing.length) {
-    throw new PipelineError(
+    const err = new PipelineError(
       `The ${label} stage was supposed to consult live sources, but never called ${missing.join(' or ')}. ` +
         `Tools actually used: ${Object.keys(toolCounts).join(', ') || 'none'}.`,
-      'This pipeline refuses to build a "cited" video on remembered facts. Either the sandbox blocks the ' +
-        'search backend, or the tool is not enabled for this account. Verify with:\n' +
-        `  printf 'Use WebSearch to find today\\'s date.' | claude -p --allowedTools WebSearch\n` +
-        'and re-run once a search actually executes.'
+      'This pipeline refuses to build a "cited" video on remembered facts. The usual causes, in order:\n' +
+        '  1. This was a correction round and the model patched its JSON from context instead of\n' +
+        '     re-checking. callClaudeJson retries these; if you are seeing it as a hard failure,\n' +
+        '     every attempt came back searchless.\n' +
+        '  2. The search backend is blocked, or the tool is not enabled for this account. Verify:\n' +
+        `       printf 'Use WebSearch to find today\\'s date.' | claude -p --allowedTools WebSearch\n` +
+        '     If that returns a date, the backend is fine and the cause is (1).'
     );
+    err.code = 'MISSING_TOOLS';
+    throw err;
   }
 
   const used = Object.entries(toolCounts)
@@ -259,15 +264,42 @@ export function extractJson(text) {
  * return an array of human-readable problems (empty means valid).
  */
 export async function callClaudeJson({ validate = () => [], attempts = 3, ...opts }) {
+  // A correction round is still a research call. Telling the model to "return
+  // corrected JSON only" reads as "stop using tools" — it then patches the
+  // structure from what it already had in context, calls nothing, and trips the
+  // requireTools guard in callClaude, which is fatal rather than retryable. One
+  // missing verdict in one batch used to kill an entire film that way, and the
+  // error blamed the sandbox for a search backend that was working fine. So
+  // when a call must consult live sources, the retry says so too.
+  const mustSearch = (opts.requireTools ?? []).length > 0;
+  const correctionRule = mustSearch
+    ? `Fix only what was rejected; leave everything else as it was.\n` +
+      `You must still consult live sources on this attempt — call ${(opts.requireTools ?? []).join(' and ')} ` +
+      `again for whatever you are correcting, and do not fill a gap from memory. ` +
+      `Then return the corrected JSON as your final message, with no prose around it.`
+    : 'Return corrected JSON only. No prose before or after it.';
+
   let lastProblem = null;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const prompt =
       attempt === 1
         ? opts.prompt
-        : `${opts.prompt}\n\n---\nYour previous reply was rejected:\n${lastProblem}\n\nReturn corrected JSON only. No prose before or after it.`;
+        : `${opts.prompt}\n\n---\nYour previous reply was rejected:\n${lastProblem}\n\n${correctionRule}`;
 
-    // eslint-disable-next-line no-await-in-loop
-    const { text, ...rest } = await callClaude({ ...opts, prompt });
+    let text;
+    let rest;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      ({ text, ...rest } = await callClaude({ ...opts, prompt }));
+    } catch (e) {
+      // A searchless correction round is a bad attempt, not a dead pipeline —
+      // the next one is told again to go and look. Only give up once every
+      // attempt has come back without touching a source.
+      if (e?.code !== 'MISSING_TOOLS' || attempt === attempts) throw e;
+      lastProblem = `You answered without consulting live sources. ${e.message}`;
+      warn(`${opts.label}: no live sources on attempt ${attempt}/${attempts} — retrying with a search required.`);
+      continue;
+    }
     const data = extractJson(text);
     if (data === null) {
       lastProblem = 'The reply contained no parseable JSON value.';

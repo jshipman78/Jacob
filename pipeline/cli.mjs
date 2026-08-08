@@ -327,29 +327,57 @@ async function main() {
   // reroll a whole section and hope, or to wave the finding through. Applying
   // the correction the auditor already wrote is strictly better than both, and
   // the revised script is then audited again rather than trusted.
+  // One pass is not enough. Applying a correction changes the sentences around
+  // it, and the re-audit routinely surfaces findings the first pass could not
+  // see — a run died here with two high-severity findings whose exact
+  // replacement text the auditor had already written, because the loop was an
+  // `if`. Rerolling a whole script to dodge a sentence the auditor has already
+  // fixed for you is the worst of the available moves; it costs twenty-five
+  // minutes and produces a different draft with different problems.
+  //
+  // So iterate: revise, re-audit, repeat while it is still converging. Stop on
+  // a clean audit, on a round that applies nothing, or at the ceiling — never
+  // silently, and never by lowering the bar.
+  const MAX_REVISE_ROUNDS = 3;
   let finalScript = script.data;
   let finalScriptKey = script.key;
-  if (opts.fixFindings && verify.data.findings.some((f) => f.severity !== 'low')) {
-    const revised = await reviseStage({
-      slug,
-      script: script.data,
-      scriptKey: script.key,
-      verify: verify.data,
-      verifyKey: verify.key,
-      model: opts.model,
-      force: forced('revise'),
-    });
-    if (revised.data.applied > 0) {
+  if (opts.fixFindings) {
+    for (let round = 1; round <= MAX_REVISE_ROUNDS; round++) {
+      if (!verify.data.findings.some((f) => f.severity !== 'low')) break;
+
+      // eslint-disable-next-line no-await-in-loop
+      const revised = await reviseStage({
+        slug,
+        script: finalScript,
+        scriptKey: finalScriptKey,
+        verify: verify.data,
+        verifyKey: verify.key,
+        model: opts.model,
+        stageName: round === 1 ? 'revise' : `revise-${round}`,
+        force: forced('revise'),
+      });
+      if (revised.data.applied === 0) {
+        warn(
+          `revise round ${round} applied nothing — the audit's findings have no usable fixes. ` +
+            'Stopping the loop rather than spinning.'
+        );
+        break;
+      }
+
       finalScript = revised.data.script;
       finalScriptKey = revised.key;
+      // eslint-disable-next-line no-await-in-loop
       verify = await verifyStage({
         ...common,
         script: finalScript,
         scriptKey: finalScriptKey,
         verifiedClaims,
-        stageName: 'verify-revised',
+        stageName: round === 1 ? 'verify-revised' : `verify-revised-${round}`,
         force: forced('verify'),
       });
+
+      const left = verify.data.findings.filter((f) => f.severity !== 'low').length;
+      info(`revise round ${round}: ${revised.data.applied} applied, ${left} finding(s) still open.`);
     }
   }
   assertVerifyPassed(verify.data, { allowFindings: opts.allowFindings });

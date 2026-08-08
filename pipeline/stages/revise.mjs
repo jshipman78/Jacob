@@ -121,13 +121,25 @@ revisions in the same order as the findings above:
 `.trim();
 }
 
-export async function reviseStage({ slug, script, scriptKey, verify, verifyKey, force = false, model = 'sonnet' }) {
+export async function reviseStage({
+  slug,
+  script,
+  scriptKey,
+  verify,
+  verifyKey,
+  force = false,
+  model = 'sonnet',
+  // The audit loop runs several rounds, and each needs its own artifact —
+  // otherwise round two overwrites round one and there is no way to see what
+  // each pass actually changed. Mirrors verifyStage's stageName.
+  stageName = 'revise',
+}) {
   // Low-severity findings are style opinions more often than errors; leave them.
   const findings = verify.findings.filter((f) => f.severity === 'high' || f.severity === 'medium');
 
   return runStage({
     slug,
-    stage: 'revise',
+    stage: stageName,
     version: REVISE_VERSION,
     inputs: { scriptKey, verifyKey, model, findings: findings.length },
     force,
