@@ -10,3 +10,11 @@ Config.setJpegQuality(95);
 Config.setConcurrency(3);
 
 Config.setOverwriteOutput(true);
+
+// This environment's egress policy blocks Remotion's Chrome download host, so
+// point it at the Chromium that ships with the preinstalled Playwright.
+const LOCAL_CHROMIUM =
+  '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell';
+if (require('fs').existsSync(LOCAL_CHROMIUM)) {
+  Config.setBrowserExecutable(LOCAL_CHROMIUM);
+}

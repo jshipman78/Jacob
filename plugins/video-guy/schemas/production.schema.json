@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shipman.video/schemas/production.schema.json",
+  "title": "Production manifest",
+  "description": "The source of truth for one documentary. Lives at productions/<id>/production.json. Agents read it to know what is done and write it to record what they did; nothing about a production's state is held only in an agent's context.",
+  "type": "object",
+  "required": ["id", "slug", "topic", "state", "createdAt", "updatedAt", "brief", "stages"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1, "default": 1 },
+
+    "id": {
+      "type": "string",
+      "pattern": "^VID-[0-9]{4}-[0-9]{3}$",
+      "description": "Production id, e.g. VID-2026-001. Assigned by video-guy, never reused."
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Must equal slugify(topic) from pipeline/core/paths.mjs, or the value passed to the CLI as --slug. This is the join key between productions/<id>/ and pipeline/work/<slug>/ and out/<slug>/."
+    },
+    "topic": { "type": "string", "minLength": 3, "description": "The topic string handed to make-video, verbatim." },
+    "title": { "type": ["string", "null"], "description": "Final on-screen title. Null until the script stage names it." },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+
+    "state": {
+      "type": "string",
+      "enum": ["scouting", "approved", "in-production", "blocked", "review", "delivered", "abandoned"],
+      "description": "Coarse lifecycle for the slate view. Fine-grained progress lives in `stages`."
+    },
+    "blockedReason": { "type": ["string", "null"] },
+
+    "brief": {
+      "type": "object",
+      "description": "Fixed at greenlight by video-guy. A producer may not change it; it asks.",
+      "required": ["targetMinutes", "style", "voice", "audience"],
+      "additionalProperties": false,
+      "properties": {
+        "targetMinutes": { "type": "number", "minimum": 1, "maximum": 60 },
+        "style": { "type": "string", "enum": ["archival", "hand-drawn", "cinematic", "motion-graphics"] },
+        "voice": { "type": "string", "description": "A voice id from scripts/voices.mjs." },
+        "audience": { "type": "string" },
+        "narrationStyle": { "type": "string" },
+        "angle": { "type": "string", "description": "The one-sentence argument this film makes, from the scout." },
+        "composition": { "type": "string", "default": "TroyVideo", "description": "Remotion composition id to render." },
+        "model": { "type": "string", "default": "sonnet", "description": "Model for the CLI's generative stages." }
+      }
+    },
+
+    "scout": {
+      "type": ["object", "null"],
+      "description": "The scouting card that got this greenlit. Null for topics supplied directly by the user.",
+      "additionalProperties": false,
+      "properties": {
+        "hookScore": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "visualScore": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "storyScore": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "researchDepth": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "estimatedRuntime": { "type": "string", "examples": ["14m"] },
+        "angle": { "type": "string" },
+        "titleCandidates": { "type": "array", "items": { "type": "string" } },
+        "risks": { "type": "array", "items": { "type": "string" } },
+        "scoutedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "stages": {
+      "type": "object",
+      "description": "One entry per pipeline stage. Keys are fixed; see docs/orchestration.md for the dependency graph.",
+      "additionalProperties": false,
+      "propertyNames": {
+        "enum": [
+          "scout", "research", "claims", "factcheck", "story", "script", "verify",
+          "visuals", "storyboard", "archival", "generated", "motion", "narrate",
+          "sound", "render", "captions", "citations", "qc", "master"
+        ]
+      },
+      "patternProperties": {
+        "^.*$": { "$ref": "#/$defs/stage" }
+      }
+    },
+
+    "assets": {
+      "type": "array",
+      "description": "Every visual or audio element the film uses, with where it came from and whether it is real.",
+      "items": { "$ref": "#/$defs/asset" }
+    },
+
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capUsd": { "type": "number", "minimum": 0, "description": "Hard ceiling for this production. A producer stops and asks rather than exceeding it." },
+        "spentUsd": { "type": "number", "minimum": 0 },
+        "byStage": { "type": "object", "additionalProperties": { "type": "number" } },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["at", "stage", "usd", "what"],
+            "additionalProperties": false,
+            "properties": {
+              "at": { "type": "string", "format": "date-time" },
+              "stage": { "type": "string" },
+              "usd": { "type": "number" },
+              "what": { "type": "string" },
+              "units": { "type": ["integer", "null"] }
+            }
+          }
+        }
+      }
+    },
+
+    "deliverables": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "video": { "type": ["string", "null"], "description": "Repo-relative path to the master mp4." },
+        "preview": { "type": ["string", "null"] },
+        "citations": { "type": ["string", "null"] },
+        "transcript": { "type": ["string", "null"] },
+        "captions": { "type": ["string", "null"] },
+        "thumbnail": { "type": ["string", "null"] },
+        "description": { "type": ["string", "null"], "description": "Publishing copy: title, description, chapters, tags." }
+      }
+    },
+
+    "qc": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "enum": ["not-run", "pass", "pass-with-notes", "fail"] },
+        "ranAt": { "type": ["string", "null"], "format": "date-time" },
+        "reportPath": { "type": ["string", "null"] },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "severity", "category", "summary"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "severity": { "type": "string", "enum": ["blocking", "high", "medium", "low"] },
+              "category": { "type": "string", "enum": ["historical", "visual", "editing", "audio", "technical", "legal"] },
+              "summary": { "type": "string" },
+              "evidence": { "type": "string", "description": "Timecode, frame number, file path — something checkable." },
+              "fixOwner": { "type": ["string", "null"], "description": "Agent that must fix it." },
+              "status": { "type": "string", "enum": ["open", "fixed", "waived"], "default": "open" },
+              "waivedBecause": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+
+    "log": {
+      "type": "array",
+      "description": "Append-only. Every state change an agent makes lands here, so a restarted producer can reconstruct what happened.",
+      "items": {
+        "type": "object",
+        "required": ["at", "actor", "event"],
+        "additionalProperties": false,
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "actor": { "type": "string", "description": "Agent name, or 'user'." },
+          "event": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "running", "done", "failed", "skipped", "stale"],
+          "description": "`stale` means an upstream artifact changed and this must re-run."
+        },
+        "owner": { "type": "string", "description": "Agent responsible for this stage." },
+        "executor": {
+          "type": "string",
+          "enum": ["cli", "agent"],
+          "description": "`cli` stages are run by pipeline/cli.mjs and cached by it; `agent` stages are performed by a specialist and produce artifacts under productions/<id>/."
+        },
+        "artifact": { "type": ["string", "null"], "description": "Repo-relative path to this stage's primary output." },
+        "cacheKey": { "type": ["string", "null"], "description": "For cli stages, the key reported by --status. Change of key = downstream stale." },
+        "startedAt": { "type": ["string", "null"], "format": "date-time" },
+        "updatedAt": { "type": ["string", "null"], "format": "date-time" },
+        "attempts": { "type": "integer", "minimum": 0, "default": 0 },
+        "costUsd": { "type": "number", "minimum": 0, "default": 0 },
+        "notes": { "type": "string" },
+        "error": { "type": ["string", "null"] }
+      }
+    },
+
+    "asset": {
+      "type": "object",
+      "required": ["id", "kind", "authenticity", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "Stable id, referenced by the storyboard." },
+        "kind": { "type": "string", "enum": ["archival-photo", "archival-film", "newspaper", "map", "portrait", "document", "generated-image", "generated-video", "motion-graphic", "music", "sfx", "ambience"] },
+        "authenticity": {
+          "type": "string",
+          "enum": ["authentic", "recreation", "synthetic", "diagram"],
+          "description": "Never blank. `authentic` is a real historical artefact; `recreation` is AI or illustration depicting a real event; `synthetic` is invented atmosphere; `diagram` is information design. QC compares this against on-screen treatment."
+        },
+        "path": { "type": "string", "description": "Repo-relative path to the file on disk." },
+        "usedBy": { "type": "array", "items": { "type": "string" }, "description": "Shot ids that use this asset." },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sourceName": { "type": "string", "examples": ["Library of Congress", "Wikimedia Commons", "National Archives (AU)"] },
+            "sourceUrl": { "type": "string" },
+            "identifier": { "type": "string", "description": "Catalogue or accession number." },
+            "creator": { "type": "string" },
+            "date": { "type": "string" },
+            "retrievedAt": { "type": "string", "format": "date-time" },
+            "model": { "type": "string", "description": "For generated assets: the model and version." },
+            "prompt": { "type": "string", "description": "For generated assets: the exact prompt, style suffix included." },
+            "seed": { "type": ["integer", "string", "null"] }
+          }
+        },
+        "rights": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": { "type": "string", "enum": ["public-domain", "cc0", "cc-by", "cc-by-sa", "licensed", "fair-use", "generated", "unknown"] },
+            "attribution": { "type": ["string", "null"], "description": "The exact credit line that must appear on screen or in the description." },
+            "licenseUrl": { "type": ["string", "null"] },
+            "verifiedAt": { "type": ["string", "null"], "format": "date-time" },
+            "notes": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

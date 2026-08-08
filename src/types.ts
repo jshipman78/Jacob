@@ -26,6 +26,13 @@ export type ShotTiming = {
   imageId: string;
   start: number;
   end: number;
+  /**
+   * What kind of visual this shot needs, written by the pipeline's visuals
+   * stage. Absent on the hand-authored Troy manifest, whose shots are placed by
+   * id in src/scenes/registry.ts — which is exactly how the renderer tells the
+   * two films apart. See docs/scene-layer-contract.md.
+   */
+  scene?: { kind?: string; options?: Record<string, unknown> };
 };
 
 export type Timing = {
@@ -36,4 +43,15 @@ export type Timing = {
   sentences: SentenceTiming[];
   sections: SectionTiming[];
   shots: ShotTiming[];
+  /**
+   * The run's visual style. Rides inside timing.json deliberately: the
+   * composition already loads this file through `calculateMetadata`, so visual
+   * direction reaches the renderer with no new props and no change to the
+   * render command. Absent on the hand-authored manifest.
+   */
+  style?: string;
+  /** What was asked for, when the scene layer could not honour it. */
+  requestedStyle?: string;
+  topic?: string;
+  title?: string;
 };

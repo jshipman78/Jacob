@@ -1,0 +1,16 @@
+{
+  "description": "Keeps the production manifest authoritative: production.json may only be mutated through production.mjs.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/guard-manifest.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
