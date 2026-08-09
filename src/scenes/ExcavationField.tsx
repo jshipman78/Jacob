@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
 import type { SceneProps } from './types';
 import {
@@ -110,6 +110,9 @@ type Figure = {
 export const ExcavationField: React.FC<SceneProps> = ({
   progress, frame, fps, seed, options,
 }) => {
+  // Unique per mounted instance: during a crossfade two scenes share the
+  // document, and a seed-derived id can collide (see ExcavatorRelay).
+  const uid = useId().replace(/:/g, '');
   const opts = (options ?? {}) as { mood?: Mood; intensity?: number };
   const mood = opts.mood ?? 'dusk';
   const spec = MOODS[mood] ?? MOODS.dusk;
@@ -477,13 +480,13 @@ export const ExcavationField: React.FC<SceneProps> = ({
       <AbsoluteFill style={plane(0.62)}>
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
           <defs>
-            <clipPath id={`mound-${Math.round(seed * 1e6)}`}>
+            <clipPath id={`mound-${uid}`}>
               <path d={geo.moundFill} />
             </clipPath>
           </defs>
 
           {/* The block is dark inside the mound; the contour cuts open it. */}
-          <g clipPath={`url(#mound-${Math.round(seed * 1e6)})`}>
+          <g clipPath={`url(#mound-${uid})`}>
             <HatchField
               strokes={geo.flankMain}
               t={tFlank}

@@ -200,11 +200,21 @@ const TOPIC_LOCKED: Partial<Record<SceneKind, string[]>> = {
 };
 
 /**
+ * `artifact` is topic-locked in a way the list above cannot express: it is not
+ * locked by *having* content, it is locked by *which object* is asked for.
+ * ArtifactPlate draws exactly two things, both from the Troy dig, and any other
+ * value used to fall through to the gold hoard. A Zeus film asked for a "scroll
+ * fragment" and a "tablet" and got the same Troy treasure twice, 147s apart,
+ * captioned as a lost Greek epic and a Hittite tablet.
+ */
+const DRAWABLE_ARTIFACTS = ['diadem', 'hoard'];
+
+/**
  * Scene kinds this layer can render for any topic. Flat literal array — read
  * statically by the pipeline, same as SCENE_COVERAGE.
  */
 export const PORTABLE_KINDS: SceneKind[] = [
-  'atmosphere', 'statement', 'ledger', 'artifact', 'cutaway',
+  'atmosphere', 'statement', 'ledger', 'cutaway',
 ];
 
 const hasContent = (v: unknown): boolean =>
@@ -233,7 +243,14 @@ export function resolveScene(
   const lockedOn = TOPIC_LOCKED[kind];
   const carriesOwnContent = lockedOn?.some((key) => hasContent(options[key])) ?? false;
 
-  if (carriesOwnContent) {
+  // An artifact this plate cannot draw is the same situation: a scene that
+  // would ignore the request and draw Troy instead.
+  const undrawableArtifact =
+    kind === 'artifact' &&
+    options.artifact !== undefined &&
+    !DRAWABLE_ARTIFACTS.includes(String(options.artifact));
+
+  if (carriesOwnContent || undrawableArtifact) {
     // The request has real content for a scene that would ignore it and draw
     // Troy instead. Drop to atmosphere, and drop the options with it — they
     // describe a different kind of picture.

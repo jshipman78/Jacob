@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
 import type { SceneProps } from './types';
 import {
@@ -193,7 +193,7 @@ export const GreatTrench: React.FC<SceneProps> = ({ progress, frame, fps, seed }
   const tGround = ramp(p, 0.0, 0.14);
   const tBands = ramp(p, 0.04, 0.4);
 
-  const id = Math.round(seed * 1e6);
+  const id = useId().replace(/:/g, '');
 
   // Wobble on the trench walls, so the cut is hacked rather than milled.
   const wallJitter = (y: number) => Math.sin(y * 0.031 + seed * 31) * 7 + Math.sin(y * 0.083 + 2) * 3;

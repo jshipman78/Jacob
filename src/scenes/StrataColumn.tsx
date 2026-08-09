@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
 import type { SceneProps } from './types';
 import {
@@ -262,7 +262,7 @@ export const StrataColumn: React.FC<SceneProps> = ({
     : 0;
   const gougeDepth = COL_TOP + gouge * COL_H * 0.62;
 
-  const id = Math.round(seed * 1e6);
+  const id = useId().replace(/:/g, '');
 
   return (
     <Plate seed={seed} frame={frame} fps={fps} tone="warm" lightPeriodSec={27} lightStrength={0.85}>

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
 import type { SceneProps } from './types';
 import {
@@ -83,6 +83,12 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
   const opts = (options ?? {}) as Options;
   const highlight = opts.highlight;
   const hotIndex = PEOPLE.findIndex((p) => p.key === highlight);
+  // SVG ids must be unique across the whole document, and during a crossfade
+  // two scenes are mounted at once. Deriving them from the seed is not enough:
+  // Math.round(seed * 1e6) collides in practice (right-ruins#20 and #22 both
+  // land on 512446), and a collision silently applies one scene's clip to the
+  // other. useId is unique per mounted instance by construction.
+  const uid = useId().replace(/:/g, '');
 
   const geo = useMemo(() => {
     const fbm = makeFbm1D(seed, 'relay');
@@ -211,11 +217,11 @@ export const ExcavatorRelay: React.FC<SceneProps> = ({ progress, frame, fps, see
               <g key={m.index} opacity={recede}>
                 <g transform={`translate(${m.cx}, ${ROW_Y}) scale(${s.toFixed(4)}) translate(${-m.cx}, ${-ROW_Y})`}>
                   <defs>
-                    <clipPath id={`med-${Math.round(seed * 1e6)}-${m.index}`}>
+                    <clipPath id={`med-${uid}-${m.index}`}>
                       <circle cx={m.cx} cy={ROW_Y} r={MEDALLION_R - 14} />
                     </clipPath>
                   </defs>
-                  <g clipPath={`url(#med-${Math.round(seed * 1e6)}-${m.index})`}>
+                  <g clipPath={`url(#med-${uid}-${m.index})`}>
                     <HatchField strokes={m.tone.first} t={a} color={col} alpha={0.5} passes={5} modulate={(st) => litness(st.k)} />
                     <HatchField strokes={m.tone.second} t={clamp01((a - 0.3) / 0.7)} color={col} alpha={0.34} passes={4} />
                     <StippleField dots={m.grain} t={a} color={col} alpha={0.4} />

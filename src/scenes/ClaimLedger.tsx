@@ -41,11 +41,35 @@ const DEFAULT_ROWS = [
   { claimed: '“Priam’s Treasure” — the gold of Homer’s king', record: 'Troy II gold, older than any Trojan War by ~1,300 years' },
 ];
 
-type Options = { rows?: { claimed: string; record: string }[] };
+type LedgerMode = 'correction' | 'contrast';
+type Options = {
+  rows?: { claimed: string; record: string }[];
+  headL?: string;
+  headR?: string;
+  mode?: LedgerMode;
+};
 
 export const ClaimLedger: React.FC<SceneProps> = ({ progress, frame, fps, seed, options }) => {
   const opts = (options ?? {}) as Options;
   const rows = opts.rows ?? DEFAULT_ROWS;
+
+  // Two different jobs, and only one of them is a verdict.
+  //
+  //   correction — a claim set against the record that refutes it. The right
+  //                column is authoritative and the left gets struck through.
+  //                This is the Troy register: what Schliemann said, and what
+  //                actually happened.
+  //   contrast   — two accounts that simply disagree, neither adjudicated.
+  //
+  // `correction` used to be the only behaviour, with the headings hard-coded.
+  // A film about two poets disagreeing therefore put Homer under "WHAT THE
+  // RECORD SHOWS" and drew a red line through Hesiod — announcing a verdict
+  // the narration was at that moment refusing to make ("Neither poet is
+  // lying"). Contrast is the safe default: a scene given no direction should
+  // not decide who is right.
+  const mode: LedgerMode = opts.mode ?? 'contrast';
+  const headL = opts.headL ?? (mode === 'correction' ? 'WHAT HE SAID' : 'ONE ACCOUNT');
+  const headR = opts.headR ?? (mode === 'correction' ? 'WHAT THE RECORD SHOWS' : 'ANOTHER ACCOUNT');
 
   const geo = useMemo(() => {
     const rand = rngFor(seed, 'ledger');
@@ -143,11 +167,12 @@ export const ClaimLedger: React.FC<SceneProps> = ({ progress, frame, fps, seed, 
             {/* Column heads. */}
             <text x={colL} y={104} fill={PLATE.paperInk} opacity={0.85 * clamp01(tRules * 2)}
               style={{ fontFamily: "'Cinzel', serif", fontWeight: 700, fontSize: 27, letterSpacing: 4 }}>
-              WHAT HE SAID
+              {headL}
             </text>
-            <text x={colR} y={104} fill="#6d2f14" opacity={0.85 * clamp01(tRules * 2)}
+            <text x={colR} y={104} fill={mode === 'correction' ? '#6d2f14' : PLATE.paperInk}
+              opacity={0.85 * clamp01(tRules * 2)}
               style={{ fontFamily: "'Cinzel', serif", fontWeight: 700, fontSize: 27, letterSpacing: 4 }}>
-              WHAT THE RECORD SHOWS
+              {headR}
             </text>
 
             {rows.map((row, i) => {
@@ -168,10 +193,11 @@ export const ClaimLedger: React.FC<SceneProps> = ({ progress, frame, fps, seed, 
                   <g opacity={tClaim} transform={`translate(${((1 - tClaim) * -12).toFixed(2)}, 0)`}>
                     <Wrapped
                       x={colL} y={y} width={colW} text={row.claimed}
-                      fill={PLATE.paperInk} size={25} weight={600} opacity={tStrike > 0.5 ? 0.42 : 0.95}
+                      fill={PLATE.paperInk} size={25} weight={600}
+                      opacity={mode === 'correction' && tStrike > 0.5 ? 0.42 : 0.95}
                     />
                   </g>
-                  {tStrike > 0.01 ? (
+                  {mode === 'correction' && tStrike > 0.01 ? (
                     <line
                       x1={colL} y1={y - 8} x2={colL + strikeW} y2={y - 6}
                       stroke="#7a2f12" strokeWidth={2.6} opacity={0.9}
@@ -180,7 +206,8 @@ export const ClaimLedger: React.FC<SceneProps> = ({ progress, frame, fps, seed, 
                   <g opacity={tRecord} transform={`translate(${((1 - tRecord) * 12).toFixed(2)}, 0)`}>
                     <Wrapped
                       x={colR} y={y} width={colW} text={row.record}
-                      fill="#6d2f14" size={25} weight={600} opacity={0.95}
+                      fill={mode === 'correction' ? '#6d2f14' : PLATE.paperInk}
+                      size={25} weight={600} opacity={0.95}
                     />
                   </g>
                 </g>

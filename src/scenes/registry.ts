@@ -53,7 +53,10 @@ export const SCENE_BY_SHOT: Record<string, SceneAssignment> = {
   // A wide landscape was the wrong picture for a boy reading Homer by one
   // candle; this beat is an interior, so it gets the nocturne plate.
   'obsession-book': { Component: LampInterior, options: { subject: 'book', intensity: 0.75 } },
-  'obsession-letters': { Component: ClaimLedger },
+  // `correction` and the Schliemann headings are true of this film and only
+  // this film — the component defaults to a neutral two-account contrast now,
+  // so the register that strikes a claim out has to be asked for.
+  'obsession-letters': { Component: ClaimLedger, options: { mode: 'correction' } },
   'obsession-merchant': { Component: ExcavationField, options: { mood: 'dusk' } },
   'obsession-homer': {
     Component: StatementCard,
@@ -75,12 +78,20 @@ export const SCENE_BY_SHOT: Record<string, SceneAssignment> = {
   // --- The treasure and the lie -------------------------------------------
   'treasure-gold': {
     Component: ArtifactPlate,
-    options: { artifact: 'diadem', label: 'GOLD DIADEM · TROY II' },
+    options: {
+      artifact: 'diadem',
+      label: 'GOLD DIADEM · TROY II',
+      // Provenance is per-shot now, because it is a factual claim. Schliemann
+      // really did publish plates of this gold; he did not publish the finds
+      // other films put this scene to.
+      sub: 'From the plates published by H. Schliemann',
+    },
   },
   'treasure-shawl': { Component: LampInterior, options: { subject: 'bundle', intensity: 0.85 } },
   'treasure-sophia': {
     Component: ClaimLedger,
     options: {
+      mode: 'correction',
       rows: [
         { claimed: 'Sophia excavated it at his side', record: 'She was in Greece that day' },
         { claimed: 'Carried out hidden in her shawl', record: 'Written in afterward' },

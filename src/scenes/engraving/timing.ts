@@ -154,9 +154,30 @@ export function stagger(
 /**
  * A pulse that fires once at `at` and decays — used for the moment a stroke
  * bites, a label snaps in, a spark throws.
+ *
+ * The peak lands exactly on `at`, but it is REACHED over `rise` rather than
+ * stepped into. The earlier form returned 0 below `at` and exp(0) = 1 at it,
+ * which is a discontinuity: on a 53-second shot, `pulse(p, 0.60, 0.05)` drove
+ * a 190px ring from nothing to full opacity between two adjacent frames and
+ * read on screen as a hard pop. The default rise still reads as a snap — it
+ * just no longer teleports.
+ *
+ * `rise` is in progress units like `t`, so its wall-clock length scales with
+ * the shot: ~6 frames on a 53-second shot, ~1 frame on a ten-second one. That
+ * is the right way round, since a one-frame appearance is most visible during
+ * a long hold — but a caller wanting an exact count should pass `rise`
+ * computed from its own fps and duration.
  */
-export const pulse = (t: number, at: number, decay = 0.09) =>
-  t < at ? 0 : Math.exp(-((t - at) / decay));
+export function pulse(
+  t: number,
+  at: number,
+  decay = 0.09,
+  rise = decay * 0.075
+): number {
+  if (t >= at) return Math.exp(-((t - at) / decay));
+  if (rise <= 0 || t <= at - rise) return 0;
+  return easeOutCubic((t - (at - rise)) / rise);
+}
 
 /**
  * A slow travelling highlight position in [0, 1] that crosses the plate once

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
 import type { SceneProps } from '../types';
 import {
@@ -43,6 +43,9 @@ type Plane = {
 export const CinematicScene: React.FC<SceneProps> = ({
   progress, frame, fps, seed, options,
 }) => {
+  // Unique per mounted instance: during a crossfade two scenes share the
+  // document, and a seed-derived id can collide (see ExcavatorRelay).
+  const uid = useId().replace(/:/g, '');
   const subject = ((options ?? {}) as Options).subject ?? 'field';
 
   const geo = useMemo(() => {
@@ -207,7 +210,7 @@ export const CinematicScene: React.FC<SceneProps> = ({
       <AbsoluteFill style={{ mixBlendMode: 'screen', pointerEvents: 'none' }}>
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute' }}>
           <defs>
-            <linearGradient id={`shaft-${Math.round(seed * 1e6)}`} x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={`shaft-${uid}`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#ffd9a0" stopOpacity="0.85" />
               <stop offset="55%" stopColor="#e0a860" stopOpacity="0.22" />
               <stop offset="100%" stopColor="#c08040" stopOpacity="0" />
@@ -221,7 +224,7 @@ export const CinematicScene: React.FC<SceneProps> = ({
                 <g key={i} transform={`rotate(${ang.toFixed(2)})`}>
                   <path
                     d={`M ${-s.width * 0.14} 0 L ${s.width * 0.14} 0 L ${s.width} 1500 L ${-s.width} 1500 Z`}
-                    fill={`url(#shaft-${Math.round(seed * 1e6)})`}
+                    fill={`url(#shaft-${uid})`}
                     opacity={s.o * breathe * (0.4 + 0.6 * ramp(p, 0.0, 0.3))}
                   />
                 </g>

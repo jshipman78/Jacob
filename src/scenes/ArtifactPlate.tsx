@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
 import type { SceneProps } from './types';
 import {
@@ -32,14 +32,36 @@ const CX = 960;
 const CY = 400;
 
 type Artifact = 'diadem' | 'hoard';
-type Options = { artifact?: Artifact; label?: string };
+const ARTIFACTS: Artifact[] = ['diadem', 'hoard'];
+type Options = { artifact?: Artifact; label?: string; sub?: string };
 
 export const ArtifactPlate: React.FC<SceneProps> = ({
   progress, frame, fps, seed, options,
 }) => {
+  // Unique per mounted instance: during a crossfade two scenes share the
+  // document, and a seed-derived id can collide (see ExcavatorRelay).
+  const uid = useId().replace(/:/g, '');
   const opts = (options ?? {}) as Options;
-  const artifact = opts.artifact ?? 'diadem';
+
+  // Only two plates are drawn, and `resolveScene` is the boundary that keeps
+  // anything else from reaching this component — a generated topic asking for
+  // "scroll fragment" is degraded there, before a frame is rendered. Warn
+  // rather than throw if one slips through anyway: a scene that throws takes
+  // the whole render down at frame 14,402, which is how this file first failed.
+  if (opts.artifact !== undefined && !ARTIFACTS.includes(opts.artifact)) {
+    console.warn(
+      `ArtifactPlate: unknown artifact "${opts.artifact}" — this scene draws only ` +
+        `${ARTIFACTS.join(' | ')}. resolveScene should have degraded this request.`
+    );
+  }
+  const artifact = ARTIFACTS.includes(opts.artifact as Artifact) ? (opts.artifact as Artifact) : 'diadem';
   const label = opts.label ?? 'GOLD DIADEM · TROY II';
+  // No default. This line used to read "From the plates published by
+  // H. Schliemann" for every film that used the scene — true of the Troy gold,
+  // false and defamatory anywhere else. It appeared under a lost Greek epic and
+  // under a Hittite tablet, putting a real archaeologist's name on finds he
+  // never published. Provenance is per-shot or it is absent.
+  const sub = opts.sub;
 
   const geo = useMemo(() => {
     const rand = rngFor(seed, 'artifact');
@@ -177,11 +199,11 @@ export const ArtifactPlate: React.FC<SceneProps> = ({
           {artifact === 'diadem' ? (
             <g>
               <defs>
-                <clipPath id={`band-${Math.round(seed * 1e6)}`}>
+                <clipPath id={`band-${uid}`}>
                   <path d={geo.bandFill} />
                 </clipPath>
               </defs>
-              <g clipPath={`url(#band-${Math.round(seed * 1e6)})`}>
+              <g clipPath={`url(#band-${uid})`}>
                 <HatchField
                   strokes={geo.bandTone}
                   t={clamp01((tObject - 0.1) / 0.9)}
@@ -278,7 +300,7 @@ export const ArtifactPlate: React.FC<SceneProps> = ({
         width={W}
         align="center"
         title={label}
-        sub="From the plates published by H. Schliemann"
+        sub={sub}
         t={tCaption}
         scale={0.86}
       />

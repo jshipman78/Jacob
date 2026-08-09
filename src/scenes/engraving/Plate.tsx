@@ -108,7 +108,11 @@ export type PlateProps = {
   lightStrength?: number;
   /** Draw the plate mark (the impression of the block's edge). */
   plateMark?: boolean;
-  /** Disable press misregistration (for scenes that own their own transform). */
+  /**
+   * Disable press misregistration. DEFAULTS TO TRUE — see the note on `reg`
+   * below. Pass `steady={false}` only for a scene that holds genuinely still,
+   * where the impression wobble reads as print rather than as camera shake.
+   */
   steady?: boolean;
   children?: React.ReactNode;
 };
@@ -129,7 +133,7 @@ export const Plate: React.FC<PlateProps> = ({
   lightAngle = 24,
   lightStrength = 1,
   plateMark = true,
-  steady = false,
+  steady = true,
   children,
 }) => {
   const t = TONES[tone] ?? TONES.neutral;
@@ -142,6 +146,18 @@ export const Plate: React.FC<PlateProps> = ({
    * continuous sub-pixel drift reads as video noise or a soft focus problem,
    * whereas a held offset that changes every seventh frame reads as
    * successive impressions. Seeded, so it is identical on every worker.
+   *
+   * OFF BY DEFAULT, and that default is the fix for a real bug. The metaphor
+   * only holds for a plate that is standing still. Every scene in this film
+   * owns a camera transform, and none of them passed `steady` — so a ±0.45px
+   * shift plus a ±0.0375° rotation was re-thrown 4.3 times a second on top of
+   * a moving frame. Held type judders under that, worst where the camera moves
+   * fastest, which is the middle of an easeInOutCubic move. It was reported
+   * from the cut as "the animation shakes, worse and worse for a bit", in the
+   * Dörpfeld shot where the camera eases across for twelve seconds.
+   *
+   * A scene that genuinely holds still may still ask for it with
+   * `steady={false}`, which is where it belongs and where it reads as print.
    */
   const reg = useMemo(() => {
     const rand = rngFor(seed, 'registration');

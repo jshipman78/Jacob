@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { AbsoluteFill } from 'remotion';
 import type { SceneProps } from './types';
 import {
@@ -208,7 +208,7 @@ export const AegeanMap: React.FC<SceneProps> = ({
   const markScale = settle(tMark, 0.22);
   const markPulse = pulse(p, 0.56, 0.05);
 
-  const id = Math.round(seed * 1e6);
+  const id = useId().replace(/:/g, '');
 
   return (
     <Plate seed={seed} frame={frame} fps={fps} tone="cold" lightPeriodSec={30} lightStrength={0.8}>
